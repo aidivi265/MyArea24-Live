@@ -176,3 +176,139 @@ def test_scenario_d_rejects_stale_weather():
     )
     assert res.matched is False
     assert "Stale weather signal" in res.reason
+
+
+def test_scenario_d_rule_success_tomtom():
+    """Validates Scenario D correlation using TomTom delay_seconds and criticality (jam_factor is None)."""
+    now = datetime.datetime(2026, 10, 9, 13, 0)  # 18:30 IST
+
+    weather = WeatherObservation(
+        id=101,
+        source_id="weatherapi",
+        source_record_id="w-101",
+        location_name="Delhi AIIMS Ring Road",
+        latitude=28.5672,
+        longitude=77.2100,
+        observed_at=now - datetime.timedelta(minutes=10),
+        temperature_c=24.0,
+        precipitation_mm=12.0,
+        condition_text="Heavy rain",
+    )
+
+    traffic = TrafficObservation(
+        id=303,
+        source_id="tomtom_traffic",
+        source_record_id="tomtom:inc-001",
+        incident_type="CONGESTION",
+        latitude=28.5680,
+        longitude=77.2110,
+        observed_at=now - datetime.timedelta(minutes=5),
+        jam_factor=None,  # Not fabricated
+        delay_seconds=1800,  # 30 mins delay
+        criticality="major",
+        road_name="Ring Road",
+    )
+
+    res = evaluate_scenario_d_rule(
+        weather=weather,
+        traffic=traffic,
+        area_label="Delhi AIIMS Ring Road",
+        reference_time_utc=now,
+        enforce_time_window=True,
+    )
+
+    assert res.matched is True
+    assert res.insight is not None
+    assert "delay +30 mins" in res.insight.summary
+    assert res.insight.composite_severity == "high"
+    assert res.insight.evidence_quality == "supported"
+    assert res.insight.signals[1].source == "tomtom_traffic"
+    assert "Delay: +30 mins" in res.insight.signals[1].metric_summary
+    assert "Criticality: major" in res.insight.signals[1].metric_summary
+
+
+def test_scenario_d_rule_tomtom_critical_severity():
+    """TomTom criticality='critical' escalates composite severity to 'severe'."""
+    now = datetime.datetime(2026, 10, 9, 13, 0)
+
+    weather = WeatherObservation(
+        id=101,
+        source_id="weatherapi",
+        source_record_id="w-101",
+        location_name="AIIMS",
+        latitude=28.5672,
+        longitude=77.2100,
+        observed_at=now - datetime.timedelta(minutes=10),
+        precipitation_mm=10.0,
+        temperature_c=24.0,
+        condition_text="Heavy rain",
+    )
+
+    traffic = TrafficObservation(
+        id=304,
+        source_id="tomtom_traffic",
+        source_record_id="tomtom:inc-002",
+        incident_type="CONGESTION",
+        latitude=28.5680,
+        longitude=77.2110,
+        observed_at=now - datetime.timedelta(minutes=5),
+        jam_factor=None,
+        delay_seconds=1200,
+        criticality="critical",
+        road_name="Ring Road",
+    )
+
+    res = evaluate_scenario_d_rule(
+        weather=weather,
+        traffic=traffic,
+        area_label="AIIMS",
+        reference_time_utc=now,
+        enforce_time_window=False,
+    )
+
+    assert res.matched is True
+    assert res.insight.composite_severity == "severe"
+
+
+def test_scenario_d_rule_tomtom_low_delay_rejects():
+    """TomTom observation with low delay (< 900s) and minor criticality fails congestion gate."""
+    now = datetime.datetime(2026, 10, 9, 13, 0)
+
+    weather = WeatherObservation(
+        id=101,
+        source_id="weatherapi",
+        source_record_id="w-101",
+        location_name="AIIMS",
+        latitude=28.5672,
+        longitude=77.2100,
+        observed_at=now - datetime.timedelta(minutes=10),
+        precipitation_mm=12.0,
+        temperature_c=24.0,
+        condition_text="Heavy rain",
+    )
+
+    traffic = TrafficObservation(
+        id=305,
+        source_id="tomtom_traffic",
+        source_record_id="tomtom:inc-003",
+        incident_type="CONGESTION",
+        latitude=28.5680,
+        longitude=77.2110,
+        observed_at=now - datetime.timedelta(minutes=5),
+        jam_factor=None,
+        delay_seconds=120,  # Only 2 mins
+        criticality="minor",
+        road_name="Ring Road",
+    )
+
+    res = evaluate_scenario_d_rule(
+        weather=weather,
+        traffic=traffic,
+        area_label="AIIMS",
+        reference_time_utc=now,
+        enforce_time_window=False,
+    )
+
+    assert res.matched is False
+    assert "Traffic below congestion threshold" in res.reason
+

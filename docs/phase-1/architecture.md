@@ -15,16 +15,16 @@ The architecture strictly adheres to the core principle established in Phase 0: 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                           EXTERNAL DATA PROVIDERS                               │
-│  WeatherAPI.com (REST)     HERE Traffic v7 (REST)     NDMA SACHET (CAP v1.2 XML)│
+│  WeatherAPI.com (REST)     TomTom v5 / HERE v7 Traffic   NDMA SACHET (CAP v1.2) │
 └──────────┬───────────────────────────┬────────────────────────────┬─────────────┘
            │ (Hourly / 30m)            │ (10m)                      │ (15m)
            ▼                           ▼                            ▼
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                           INTEGRATION & ADAPTER LAYER                           │
-│  WeatherAPIClient          HERETrafficClient          SACHETClient              │
-│  - 60m In-Memory Cache     - 5m In-Memory Cache       - 10m In-Memory Cache     │
-│  - Bounded HTTP Timeouts   - Geo Bounding Box Query   - Safe defusedxml Parsing │
-│  - Exponential Backoff     - Rate-Limit Headers       - Entity Protection       │
+│  WeatherAPIClient          TomTomTrafficClient (or HERE)  SACHETClient          │
+│  - 60m In-Memory Cache     - 5m In-Memory Cache           - 10m In-Memory Cache │
+│  - Bounded HTTP Timeouts   - Geo Bounding Box Query       - Safe defusedxml     │
+│  - Exponential Backoff     - Rate-Limit Protection        - Entity Protection   │
 └──────────┬───────────────────────────┬────────────────────────────┬─────────────┘
            │                           │                            │
            ▼                           ▼                            ▼
@@ -74,7 +74,7 @@ The architecture strictly adheres to the core principle established in Phase 0: 
 
 - **`app/core/`**: Centralized configuration (`config.py`) using `pydantic-settings`, redacting logging (`logging.py`), and error hierarchy (`errors.py`).
 - **`app/database/`**: Database engine and session lifecycle (`session.py`), SQLAlchemy ORM models (`models.py`), and Alembic migrations (`backend/alembic`).
-- **`app/integrations/`**: Provider-specific HTTP adapters (`base.py`, `weatherapi/client.py`, `here/client.py`, `sachet/client.py`).
+- **`app/integrations/`**: Provider-specific HTTP adapters (`base.py`, `weatherapi/client.py`, `tomtom/client.py`, `here/client.py`, `sachet/client.py`).
 - **`app/normalization/`**: Pydantic models and parsers converting provider schemas into stable internal domain objects (`weather.py`, `traffic.py`, `alerts.py`).
 - **`app/ingestion/`**: Background sync workers (`worker.py`), retry utilities with backoff and jitter (`retry.py`), and lock-guarded in-process scheduler (`scheduler.py`).
 - **`app/intelligence/`**: Deterministic rules (`rules.py`), correlation coordinator (`correlation.py`), and structured schemas (`schemas.py`).

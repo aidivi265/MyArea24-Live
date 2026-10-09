@@ -10,12 +10,13 @@ Milestone 1 establishes the headless signal ingestion, normalization, database p
 
 ### Validated Capabilities:
 - **WeatherAPI Integration:** Real-time and hourly forecast ingestion with 60-minute in-memory caching.
-- **HERE Traffic v7 Integration:** Road incident, delay, and congestion ingestion across configured pilot bounding boxes.
+- **TomTom Traffic v5 Integration (Primary):** Live incident, delay, and road congestion ingestion across configured pilot bounding boxes (`TOMTOM_API_KEY`).
+- **HERE Traffic v7 Integration (Alternative):** Compatible fallback provider selectable via `TRAFFIC_PROVIDER="here"`.
 - **NDMA SACHET Integration:** Safe OASIS CAP v1.2 XML parsing with GeoJSON polygon extraction and entity-attack protection.
-- **Deterministic Correlation Engine:** Evaluates **Scenario D (Monsoon Commute & Congestion)** using pure-Python Haversine proximity, time-window checking, and compound thresholds.
+- **Deterministic Correlation Engine:** Evaluates **Scenario D (Monsoon Commute & Congestion)** using pure-Python Haversine proximity, time-window checking, and compound thresholds (compatible with TomTom delay/criticality and HERE jamFactor).
 - **Full Signal Provenance:** Every emitted intelligence insight embeds its supporting raw observation IDs, timestamps, and confidence scores.
 - **Zero Duplicate Storage:** Idempotent ingestion and SHA-256 deduplication hash indexing.
-- **33 Automated Tests Passing:** 100% test coverage across normalization, CAP parsing, correlation rules, database persistence, and API contracts.
+- **48 Automated Tests Passing:** 100% test coverage across normalization, CAP parsing, correlation rules, database persistence, and API contracts.
 
 ---
 

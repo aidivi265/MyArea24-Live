@@ -14,7 +14,7 @@ class HERETrafficClient(BaseProviderClient):
 
     def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
         super().__init__(provider_name="here_traffic")
-        self.api_key = api_key or settings.HERE_API_KEY
+        self.api_key = api_key if api_key is not None else settings.HERE_API_KEY
         self.base_url = (base_url or settings.HERE_TRAFFIC_BASE_URL).rstrip("/")
         # In-memory cache: (min_lon, min_lat, max_lon, max_lat) -> (records, expires_at_utc)
         self._cache: Dict[Tuple[float, float, float, float], Tuple[List[NormalizedTrafficRecord], datetime.datetime]] = {}

@@ -55,12 +55,27 @@ MyArea24 does not use an LLM or statistical guesswork to decide whether events a
 ┌──────────────────────────────────────────────┐
 │ Gate 4: Compound Thresholds                  │
 │ P_mm >= 8.0 mm/hr                            │
-│ AND (J_f >= 6.5  OR  D_s >= 900s)            │
+│ AND (                                        │
+│   (J_f is not None AND J_f >= 6.5)           │
+│   OR (D_s >= 900s)                           │
+│   OR (Criticality in ("major", "critical"))  │
+│ )                                            │
 └──────────────────────┬───────────────────────┘
                        │ PASS
                        ▼
 [ EMIT Scenario D Intelligence Insight Card ]
 ```
+
+### 2.4 Provider Metric Handling & Alternative Rules
+
+| Provider | Available Metrics | Evaluated Congestion Rule | Jam Factor Handling |
+|---|---|---|---|
+| **HERE Technologies** | `jamFactor` (0.0 - 10.0), `delay` (seconds) | $J_f \ge 6.5$ OR $D_s \ge 900\text{s}$ | Stored as reported |
+| **TomTom Traffic** | `magnitudeOfDelay` (0-4), `delay` (seconds) | $D_s \ge 900\text{s}$ OR $\text{Criticality} \in \{\text{"major"}, \text{"critical"}\}$ | **Strictly None** (Never fabricated) |
+
+### 2.5 Composite Severity Escalation
+- **`severe`**: If $P_{\text{mm}} \ge 15.0\text{ mm/hr}$ OR $J_f \ge 8.0$ OR $D_s \ge 2400\text{s (40 min)}$ OR $\text{Criticality} = \text{"critical"}$
+- **`high`**: Standard Scenario D match meeting all Gate 1-4 thresholds.
 
 ---
 

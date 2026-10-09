@@ -1,0 +1,26 @@
+{
+  "incidents": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [77.2110, 28.5680]
+      },
+      "properties": {
+        "id": "TTI-DEL-NORMAL-002",
+        "iconCategory": 6,
+        "magnitudeOfDelay": 1,
+        "startTime": "2026-10-09T12:00:00Z",
+        "endTime": "2026-10-09T15:00:00Z",
+        "delay": 120,
+        "roadNumbers": ["Ring Road"],
+        "events": [
+          {
+            "code": 115,
+            "description": "Slow traffic"
+          }
+        ]
+      }
+    }
+  ]
+}

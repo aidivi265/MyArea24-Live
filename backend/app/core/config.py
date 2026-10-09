@@ -46,7 +46,11 @@ class Settings(BaseSettings):
     WEATHERAPI_BASE_URL: str = "https://api.weatherapi.com/v1"
     WEATHER_POLL_INTERVAL_MINUTES: int = 30
 
-    # HERE Traffic
+    # Traffic Provider Configuration (TomTom Primary, HERE Optional Fallback)
+    TRAFFIC_PROVIDER: str = "tomtom"  # "tomtom" or "here"
+    TOMTOM_API_KEY: Optional[str] = None
+    TOMTOM_TRAFFIC_BASE_URL: str = "https://api.tomtom.com/traffic/services/5"
+
     HERE_API_KEY: Optional[str] = None
     HERE_TRAFFIC_BASE_URL: str = "https://data.traffic.hereapi.com/v7"
     TRAFFIC_POLL_INTERVAL_MINUTES: int = 10

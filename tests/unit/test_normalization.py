@@ -1,6 +1,10 @@
 import pytest
 from backend.app.normalization.weather import normalize_weatherapi_response, NormalizedWeatherRecord
-from backend.app.normalization.traffic import normalize_here_traffic_response, NormalizedTrafficRecord
+from backend.app.normalization.traffic import (
+    normalize_here_traffic_response,
+    normalize_tomtom_traffic_response,
+    NormalizedTrafficRecord,
+)
 
 
 def test_weather_normalization_heavy_rain(heavy_rain_fixture):
@@ -61,3 +65,49 @@ def test_traffic_normalization_normal_flow(normal_traffic_fixture):
     rec = records[0]
     assert rec.jam_factor == 2.0
     assert rec.delay_seconds == 0
+
+
+def test_tomtom_traffic_normalization_heavy(tomtom_heavy_traffic_fixture):
+    records = normalize_tomtom_traffic_response(tomtom_heavy_traffic_fixture)
+    assert len(records) == 1
+    rec = records[0]
+    assert rec.source_record_id == "tomtom:TTI-DEL-HEAVY-001"
+    assert rec.incident_type == "CONGESTION"
+    assert rec.criticality == "major"
+    assert rec.jam_factor is None  # Must never fabricate HERE jamFactor
+    assert rec.delay_seconds == 1800
+    assert rec.road_name == "Ring Road"
+    assert rec.latitude == 28.5680
+    assert rec.longitude == 77.2110
+    assert rec.geometry_geojson is not None
+    assert rec.geometry_geojson["type"] == "LineString"
+
+
+def test_tomtom_traffic_normalization_normal(tomtom_normal_traffic_fixture):
+    records = normalize_tomtom_traffic_response(tomtom_normal_traffic_fixture)
+    assert len(records) == 1
+    rec = records[0]
+    assert rec.source_record_id == "tomtom:TTI-DEL-NORMAL-002"
+    assert rec.criticality == "minor"
+    assert rec.delay_seconds == 120
+    assert rec.jam_factor is None
+
+
+def test_tomtom_traffic_normalization_missing_metrics(tomtom_sparse_traffic_fixture):
+    records = normalize_tomtom_traffic_response(tomtom_sparse_traffic_fixture)
+    assert len(records) == 1
+    rec = records[0]
+    assert rec.source_record_id == "tomtom:TTI-DEL-SPARSE-003"
+    assert rec.delay_seconds is None
+    assert rec.criticality is None
+    assert rec.jam_factor is None
+    assert rec.road_name is None
+    assert rec.latitude == 28.5680
+    assert rec.longitude == 77.2110
+
+
+def test_tomtom_traffic_normalization_invalid():
+    assert normalize_tomtom_traffic_response({}) == []
+    assert normalize_tomtom_traffic_response({"incidents": "not_a_list"}) == []
+    assert normalize_tomtom_traffic_response({"incidents": [{}]}) == []
+

@@ -2,7 +2,7 @@
 
 **Phase:** Phase 1 (Milestone 1)  
 **Test Suite:** Pytest (Unit & Integration Tests)  
-**Total Automated Tests:** 33 Passed (0 Failed)  
+**Total Automated Tests:** 48 Passed (0 Failed)  
 
 ---
 
@@ -17,7 +17,7 @@ All tests execute entirely against isolated, in-memory SQLite fixtures (`StaticP
 
 Expected output:
 ```text
-======================== 33 passed in 1.34s ========================
+======================== 48 passed in 1.22s ========================
 ```
 
 ---
@@ -25,29 +25,42 @@ Expected output:
 ## 2. Test Suite Breakdown
 
 ### 2.1 Unit Tests (`tests/unit/`)
-1. **`test_normalization.py` (5 tests):**
+1. **`test_normalization.py` (9 tests):**
    - Weather normalization from heavy rain and light rain payloads.
    - Coordinate validation (WGS-84 latitude and longitude bounds).
    - Traffic normalization from HERE v7 LineString shape links.
    - Traffic flow normalization for low-delay segments.
+   - TomTom v5 traffic heavy congestion normalization (`jam_factor is None`, `delay_seconds=1800`, `criticality="major"`).
+   - TomTom v5 traffic normal flow normalization.
+   - TomTom v5 missing metrics handling (gracefully normalizes sparse data).
+   - TomTom v5 malformed / non-dict payload protection.
 2. **`test_sachet_cap.py` (5 tests):**
    - OASIS CAP v1.2 XML parsing with defusedxml protection.
    - Coordinate order inversion (CAP lat,lon to GeoJSON [lon, lat]).
    - Circle geometry extraction with radius in km.
    - Expired alert detection (`is_active = False`).
    - Malformed XML resilience (graceful empty return without unhandled crash).
-3. **`test_correlation.py` (6 tests):**
+3. **`test_correlation.py` (9 tests):**
    - Haversine distance accuracy between known coordinates.
    - IST evaluation window calculation (17:30 to 20:30 IST).
-   - **Scenario D Acceptance Test:** Verified that synthetic $12\text{ mm/hr}$ rain and a $7.5$ jam factor successfully emit an active, grounded intelligence insight card with supporting provenance.
+   - **Scenario D Acceptance Test (HERE):** Verified that synthetic $12\text{ mm/hr}$ rain and a $7.5$ jam factor emit a high severity card.
+   - **Scenario D Acceptance Test (TomTom):** Verified that synthetic $12\text{ mm/hr}$ rain and TomTom delay (+30 mins) emit a grounded insight card.
+   - **Scenario D Critical Escalation (TomTom):** Verified that `criticality="critical"` escalates composite severity to `severe`.
+   - **Scenario D Low Delay Rejection (TomTom):** Negative rejection when queue delay is below threshold ($120\text{s} < 900\text{s}$).
    - Negative rejection when rainfall is below threshold ($2.5\text{ mm/hr} < 8.0\text{ mm/hr}$).
    - Negative rejection when signals are geographically separated ($> 5.0\text{ km}$).
    - Negative rejection when weather signals are stale ($> 60\text{ minutes}$).
-4. **`test_adapters.py` (5 tests):**
-   - Missing credential guards raising typed `ProviderAuthError`.
+4. **`test_adapters.py` (12 tests):**
+   - Missing credential guards for WeatherAPI, HERE, and TomTom raising typed `ProviderAuthError`.
    - In-memory 60-minute TTL cache verification for WeatherAPI.
+   - In-memory 5-minute TTL cache verification for TomTom traffic.
    - HERE traffic incident querying.
    - SACHET XML retrieval.
+   - TomTom authentication error (HTTP 401/403 -> `ProviderAuthError`).
+   - TomTom rate limit error (HTTP 429 -> `ProviderRateLimitError`).
+   - TomTom timeout error (`ProviderTimeoutError`).
+   - TomTom malformed JSON response error (`ProviderError`).
+   - TomTom sparse response / missing traffic metrics handling.
 5. **`test_retry_and_errors.py` (3 tests):**
    - Retry success with exponential backoff on transient timeouts.
    - Immediate failure on non-retryable 401/403 authentication errors.
@@ -57,7 +70,10 @@ Expected output:
    - Pilot traffic bounding box coordinate parsing.
 
 ### 2.2 Integration Tests (`tests/integration/`)
-1. **`test_database.py` (3 tests):**
+1. **`test_ingestion.py` (2 tests):**
+   - Idempotent ingestion, deduplication, and correlation with HERE traffic adapter.
+   - Idempotent ingestion, deduplication, and correlation with TomTom traffic adapter (`source_id="tomtom_traffic"`).
+2. **`test_database.py` (3 tests):**
    - Table initialization and DataSource record persistence.
    - Unique constraint enforcement preventing duplicate `source_record_id` entries.
    - Foreign key cascading between `intelligence_insights` and `intelligence_signals`.

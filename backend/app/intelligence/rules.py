@@ -109,27 +109,55 @@ def evaluate_scenario_d_rule(
             reason=f"Precipitation {weather.precipitation_mm:.1f} mm/hr below threshold {rain_thresh:.1f} mm/hr",
         )
 
-    # 5. Traffic Congestion Threshold Check
-    jam_val = traffic.jam_factor or 0.0
+    # 5. Traffic Congestion Threshold Check (Compatible with both TomTom delay/criticality and HERE jamFactor)
+    jam_val = traffic.jam_factor
     delay_val = traffic.delay_seconds or 0
-    if jam_val < jam_thresh and delay_val < settings.RULE_DELAY_THRESHOLD_SECONDS:
-        return RuleEvaluationResult(
-            matched=False,
-            reason=f"Traffic below congestion threshold (jam_factor={jam_val:.1f} < {jam_thresh}, delay={delay_val}s)",
-        )
+    crit_val = (traffic.criticality or "").lower()
+
+    is_congested = False
+    if jam_val is not None and jam_val >= jam_thresh:
+        is_congested = True
+    elif delay_val >= settings.RULE_DELAY_THRESHOLD_SECONDS:
+        is_congested = True
+    elif crit_val in ("major", "critical"):
+        is_congested = True
+
+    if not is_congested:
+        if jam_val is not None:
+            reason = f"Traffic below congestion threshold (jam_factor={jam_val:.1f} < {jam_thresh}, delay={delay_val}s)"
+        else:
+            reason = f"Traffic below congestion threshold (delay={delay_val}s < {settings.RULE_DELAY_THRESHOLD_SECONDS}s, criticality={traffic.criticality or 'none'})"
+        return RuleEvaluationResult(matched=False, reason=reason)
 
     # 6. Build Grounded Intelligence Output
-    severity = "severe" if (weather.precipitation_mm >= 15.0 or jam_val >= 8.0) else "high"
+    severity = "severe" if (
+        weather.precipitation_mm >= 15.0
+        or (jam_val is not None and jam_val >= 8.0)
+        or delay_val >= 2400
+        or crit_val == "critical"
+    ) else "high"
+
     delay_desc = f", reported delay +{delay_val // 60} mins" if delay_val > 0 else ""
     road_desc = f" near {traffic.road_name}" if traffic.road_name else ""
 
+    if jam_val is not None:
+        traffic_metric_text = f"Jam Factor {jam_val:.1f}/10{delay_desc}"
+        traffic_provenance_summary = f"Jam Factor: {jam_val:.1f}/10 | Type: {traffic.incident_type}{delay_desc}"
+    elif delay_val > 0:
+        crit_label = f" ({traffic.criticality})" if traffic.criticality else ""
+        traffic_metric_text = f"delay +{delay_val // 60} mins{crit_label}"
+        traffic_provenance_summary = f"Delay: +{delay_val // 60} mins | Criticality: {traffic.criticality or 'N/A'} | Type: {traffic.incident_type}"
+    else:
+        traffic_metric_text = f"criticality {traffic.criticality or 'elevated'}"
+        traffic_provenance_summary = f"Type: {traffic.incident_type} | Criticality: {traffic.criticality or 'N/A'}"
+
     summary = (
         f"Rainfall ({weather.precipitation_mm:.1f} mm/hr) and elevated traffic conditions "
-        f"(Jam Factor {jam_val:.1f}/10{delay_desc}) overlap within {dist_km:.1f} km of {area_label}{road_desc}."
+        f"({traffic_metric_text}) overlap within {dist_km:.1f} km of {area_label}{road_desc}."
     )
     potential_impact = (
         "Travel along connecting corridors may take substantially longer due to reduced visibility "
-        "and surface water accumulation. Underpasses and low-lying junctions face increased bottleneck risk."
+        "and surface water accumulation. Low-lying underpasses and junctions face increased bottleneck risk."
     )
     recommendation = (
         "Allow 25-45 minutes additional travel time. Consider deferring non-essential road travel "
@@ -139,17 +167,17 @@ def evaluate_scenario_d_rule(
     signals = [
         SignalProvenance(
             type="weather",
-            source="weatherapi",
+            source=weather.source_id or "weatherapi",
             observation_id=weather.id,
             observed_at=weather.observed_at,
             metric_summary=f"Precipitation: {weather.precipitation_mm:.1f} mm/hr ({weather.condition_text})",
         ),
         SignalProvenance(
             type="traffic",
-            source="here_traffic",
+            source=traffic.source_id or "tomtom_traffic",
             observation_id=traffic.id,
             observed_at=traffic.observed_at,
-            metric_summary=f"Jam Factor: {jam_val:.1f}/10 | Type: {traffic.incident_type}{delay_desc}",
+            metric_summary=traffic_provenance_summary,
         ),
     ]
 

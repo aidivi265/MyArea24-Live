@@ -23,12 +23,15 @@ async def test_idempotent_ingestion_and_correlation(
 ):
     # 1. Setup Mocked Provider Clients
     mock_weather = AsyncMock()
+    mock_weather.provider_name = "weatherapi"
     mock_weather.fetch_forecast.return_value = normalize_weatherapi_response(heavy_rain_fixture)
 
     mock_traffic = AsyncMock()
+    mock_traffic.provider_name = "here_traffic"
     mock_traffic.fetch_incidents.return_value = normalize_here_traffic_response(heavy_traffic_fixture)
 
     mock_sachet = AsyncMock()
+    mock_sachet.provider_name = "sachet_cap"
     mock_sachet.fetch_alerts.return_value = parse_cap_xml_payload(valid_cap_xml)
 
     worker = IngestionWorker(
@@ -91,3 +94,64 @@ async def test_idempotent_ingestion_and_correlation(
 
     total_insights_count = db_session.query(IntelligenceInsight).count()
     assert total_insights_count == len(insights)
+
+
+@pytest.mark.asyncio
+async def test_tomtom_idempotent_ingestion_and_correlation(
+    db_session,
+    heavy_rain_fixture,
+    tomtom_heavy_traffic_fixture,
+    valid_cap_xml,
+):
+    from backend.app.normalization.traffic import normalize_tomtom_traffic_response
+
+    mock_weather = AsyncMock()
+    mock_weather.provider_name = "weatherapi"
+    mock_weather.fetch_forecast.return_value = normalize_weatherapi_response(heavy_rain_fixture)
+
+    mock_traffic = AsyncMock()
+    mock_traffic.provider_name = "tomtom_traffic"
+    mock_traffic.fetch_incidents.return_value = normalize_tomtom_traffic_response(tomtom_heavy_traffic_fixture)
+
+    mock_sachet = AsyncMock()
+    mock_sachet.provider_name = "sachet_cap"
+    mock_sachet.fetch_alerts.return_value = parse_cap_xml_payload(valid_cap_xml)
+
+    worker = IngestionWorker(
+        weather_client=mock_weather,
+        traffic_client=mock_traffic,
+        sachet_client=mock_sachet,
+    )
+
+    worker.ensure_data_sources(db_session)
+    weather_log = await worker.sync_weather(db_session)
+    traffic_log = await worker.sync_traffic(db_session)
+    sachet_log = await worker.sync_sachet(db_session)
+
+    assert weather_log.status == "SUCCESS"
+    assert traffic_log.status == "SUCCESS"
+    assert sachet_log.status == "SUCCESS"
+
+    traffic_obs = db_session.query(TrafficObservation).first()
+    assert traffic_obs is not None
+    assert traffic_obs.source_id == "tomtom_traffic"
+    assert traffic_obs.jam_factor is None  # Never fabricated!
+    assert traffic_obs.delay_seconds == 1800
+    assert traffic_obs.criticality == "major"
+
+    # Correlate
+    now = datetime.datetime.utcnow()
+    db_session.query(WeatherObservation).update({"observed_at": now - datetime.timedelta(minutes=10)})
+    db_session.query(TrafficObservation).update({"observed_at": now - datetime.timedelta(minutes=5)})
+    db_session.commit()
+
+    engine = CorrelationEngine(db_session)
+    insights = engine.run_correlation(reference_time_utc=now, enforce_time_window=False)
+
+    assert len(insights) >= 1
+    insight = insights[0]
+    assert "Monsoon Commute Alert" in insight.headline
+    assert "delay +30 mins" in insight.summary.lower()
+    assert insight.signals[1].source_name == "tomtom_traffic"
+    assert "Delay: +30 mins" in insight.signals[1].metric_summary
+

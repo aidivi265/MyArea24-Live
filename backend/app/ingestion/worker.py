@@ -14,6 +14,7 @@ from backend.app.database.models import (
     GovernmentNotice,
 )
 from backend.app.integrations.weatherapi.client import WeatherAPIClient
+from backend.app.integrations.tomtom.client import TomTomTrafficClient
 from backend.app.integrations.here.client import HERETrafficClient
 from backend.app.integrations.sachet.client import SACHETClient
 from backend.app.normalization.weather import NormalizedWeatherRecord
@@ -29,18 +30,29 @@ class IngestionWorker:
     def __init__(
         self,
         weather_client: Optional[WeatherAPIClient] = None,
-        traffic_client: Optional[HERETrafficClient] = None,
+        traffic_client: Optional[Any] = None,
         sachet_client: Optional[SACHETClient] = None,
     ):
         self.weather_client = weather_client or WeatherAPIClient()
-        self.traffic_client = traffic_client or HERETrafficClient()
+        if traffic_client is not None:
+            self.traffic_client = traffic_client
+        elif settings.TRAFFIC_PROVIDER.lower() == "tomtom":
+            self.traffic_client = TomTomTrafficClient()
+        else:
+            self.traffic_client = HERETrafficClient()
         self.sachet_client = sachet_client or SACHETClient()
 
     def ensure_data_sources(self, db: Session) -> None:
         """Initializes default DataSource records if missing."""
+        traffic_source_id = getattr(self.traffic_client, "provider_name", "tomtom_traffic")
+        if not isinstance(traffic_source_id, str):
+            traffic_source_id = "tomtom_traffic" if settings.TRAFFIC_PROVIDER == "tomtom" else "here_traffic"
+        traffic_name = "TomTom Traffic Incidents v5" if "tomtom" in traffic_source_id else "HERE Technologies Traffic v7"
+        traffic_url = settings.TOMTOM_TRAFFIC_BASE_URL if "tomtom" in traffic_source_id else settings.HERE_TRAFFIC_BASE_URL
+
         sources = [
             ("weatherapi", "WeatherAPI.com", settings.WEATHERAPI_BASE_URL),
-            ("here_traffic", "HERE Technologies Traffic v7", settings.HERE_TRAFFIC_BASE_URL),
+            (traffic_source_id, traffic_name, traffic_url),
             ("sachet_cap", "NDMA SACHET Disaster Alerts", settings.SACHET_FEED_URL),
         ]
         for src_id, name, url in sources:
@@ -189,8 +201,9 @@ class IngestionWorker:
         duration_ms = int((time.monotonic() - start_mono) * 1000)
         end_time = datetime.datetime.utcnow()
 
+        traffic_source_id = getattr(self.traffic_client, "provider_name", "tomtom_traffic")
         log = DataSyncLog(
-            source_id="here_traffic",
+            source_id=traffic_source_id,
             sync_started_at=start_time,
             sync_ended_at=end_time,
             duration_ms=duration_ms,
@@ -202,7 +215,7 @@ class IngestionWorker:
         )
         db.add(log)
 
-        src = db.query(DataSource).filter(DataSource.id == "here_traffic").first()
+        src = db.query(DataSource).filter(DataSource.id == traffic_source_id).first()
         if src:
             src.last_sync_at = end_time
             src.last_status = status

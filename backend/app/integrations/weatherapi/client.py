@@ -14,7 +14,7 @@ class WeatherAPIClient(BaseProviderClient):
 
     def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
         super().__init__(provider_name="weatherapi")
-        self.api_key = api_key or settings.WEATHERAPI_API_KEY
+        self.api_key = api_key if api_key is not None else settings.WEATHERAPI_API_KEY
         self.base_url = (base_url or settings.WEATHERAPI_BASE_URL).rstrip("/")
         # In-memory cache: (rounded_lat, rounded_lon) -> (records, expires_at_utc)
         self._cache: Dict[Tuple[float, float], Tuple[List[NormalizedWeatherRecord], datetime.datetime]] = {}

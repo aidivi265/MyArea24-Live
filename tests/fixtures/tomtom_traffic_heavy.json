@@ -1,0 +1,32 @@
+{
+  "incidents": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [77.2110, 28.5680],
+          [77.2125, 28.5695]
+        ]
+      },
+      "properties": {
+        "id": "TTI-DEL-HEAVY-001",
+        "iconCategory": 6,
+        "magnitudeOfDelay": 3,
+        "startTime": "2026-10-09T12:00:00Z",
+        "endTime": "2026-10-09T15:00:00Z",
+        "from": "AIIMS Flyover",
+        "to": "Moolchand Underpass",
+        "length": 1450.5,
+        "delay": 1800,
+        "roadNumbers": ["Ring Road"],
+        "events": [
+          {
+            "code": 101,
+            "description": "Stationary traffic due to waterlogging"
+          }
+        ]
+      }
+    }
+  ]
+}

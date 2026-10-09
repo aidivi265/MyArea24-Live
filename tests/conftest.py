@@ -93,6 +93,24 @@ def expired_cap_xml(fixtures_dir):
 
 
 @pytest.fixture
-def malformed_cap_xml(fixtures_dir):
-    with open(fixtures_dir / "sachet_cap_malformed.xml", "r", encoding="utf-8") as f:
-        return f.read()
+def malformed_cap_xml():
+    return "<alert><invalid>This is not a valid CAP XML structure</alert>"
+
+
+@pytest.fixture
+def tomtom_heavy_traffic_fixture(fixtures_dir):
+    with open(fixtures_dir / "tomtom_traffic_heavy.json", "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+@pytest.fixture
+def tomtom_normal_traffic_fixture(fixtures_dir):
+    with open(fixtures_dir / "tomtom_traffic_normal.json", "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+@pytest.fixture
+def tomtom_sparse_traffic_fixture(fixtures_dir):
+    with open(fixtures_dir / "tomtom_traffic_missing_metrics.json", "r", encoding="utf-8") as f:
+        return json.load(f)
+
