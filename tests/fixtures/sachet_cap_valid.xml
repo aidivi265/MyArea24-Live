@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+  <identifier>NDMA-CAP-2026-DEL-0841</identifier>
+  <sender>ndma@sachet.gov.in</sender>
+  <sent>2026-10-09T16:00:00+05:30</sent>
+  <status>Actual</status>
+  <msgType>Alert</msgType>
+  <scope>Public</scope>
+  <info>
+    <category>Met</category>
+    <event>Severe Thunderstorm &amp; Inundation</event>
+    <urgency>Expected</urgency>
+    <severity>Severe</severity>
+    <certainty>Observed</certainty>
+    <effective>2026-10-09T16:00:00+05:30</effective>
+    <expires>2026-10-10T02:00:00+05:30</expires>
+    <headline>Severe Thunderstorm &amp; Heavy Downpour Advisory for Delhi-NCR</headline>
+    <description>IMD and NDMA bulletin warning of localized waterlogging in low-lying underpasses.</description>
+    <instruction>Avoid non-essential travel in affected corridors.</instruction>
+    <area>
+      <areaDesc>South and Central Delhi</areaDesc>
+      <polygon>28.5200,77.1500 28.6200,77.1500 28.6200,77.2600 28.5200,77.2600 28.5200,77.1500</polygon>
+      <circle>28.5672,77.2100 10.0</circle>
+    </area>
+  </info>
+</alert>

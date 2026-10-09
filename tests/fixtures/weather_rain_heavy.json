@@ -1,0 +1,40 @@
+{
+  "location": {
+    "name": "Delhi AIIMS Ring Road",
+    "region": "Delhi",
+    "country": "India",
+    "lat": 28.5672,
+    "lon": 77.2100,
+    "tz_id": "Asia/Kolkata",
+    "localtime_epoch": 1728477000
+  },
+  "current": {
+    "last_updated_epoch": 1728477000,
+    "temp_c": 24.5,
+    "condition": {
+      "text": "Heavy rain with thunder",
+      "code": 1195
+    },
+    "wind_kph": 28.0,
+    "humidity": 88,
+    "precip_mm": 12.0
+  },
+  "forecast": {
+    "forecastday": [
+      {
+        "date": "2026-10-09",
+        "hour": [
+          {
+            "time_epoch": 1728478800,
+            "temp_c": 24.0,
+            "condition": {
+              "text": "Moderate or heavy rain shower"
+            },
+            "precip_mm": 14.5,
+            "chance_of_rain": 90
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "results": [
+    {
+      "id": "IN-DEL-98422",
+      "location": {
+        "shape": {
+          "links": [
+            {
+              "points": [
+                {"lat": 28.5680, "lng": 77.2110}
+              ]
+            }
+          ]
+        }
+      },
+      "incidentDetails": {
+        "incidentType": "FLOW",
+        "criticality": "low",
+        "jamFactor": 2.0,
+        "delay": 0,
+        "roadName": {"value": "Ring Road Southbound"},
+        "description": {"value": "Normal traffic flow"},
+        "startTime": "2026-10-09T12:00:00Z",
+        "endTime": "2026-10-09T16:00:00Z"
+      }
+    }
+  ]
+}

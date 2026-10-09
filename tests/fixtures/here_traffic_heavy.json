@@ -1,0 +1,29 @@
+{
+  "results": [
+    {
+      "id": "IN-DEL-98421",
+      "location": {
+        "shape": {
+          "links": [
+            {
+              "points": [
+                {"lat": 28.5680, "lng": 77.2110},
+                {"lat": 28.5695, "lng": 77.2125}
+              ]
+            }
+          ]
+        }
+      },
+      "incidentDetails": {
+        "incidentType": "CONGESTION",
+        "criticality": "critical",
+        "jamFactor": 7.5,
+        "delay": 1800,
+        "roadName": {"value": "Ring Road Southbound near AIIMS Underpass"},
+        "description": {"value": "Severe slow moving traffic, heavy delays"},
+        "startTime": "2026-10-09T12:00:00Z",
+        "endTime": "2026-10-09T16:00:00Z"
+      }
+    }
+  ]
+}

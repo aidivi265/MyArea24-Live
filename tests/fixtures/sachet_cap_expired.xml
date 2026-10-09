@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+  <identifier>NDMA-CAP-2026-DEL-EXPIRED</identifier>
+  <sender>ndma@sachet.gov.in</sender>
+  <sent>2026-10-01T10:00:00+05:30</sent>
+  <status>Actual</status>
+  <msgType>Alert</msgType>
+  <scope>Public</scope>
+  <info>
+    <category>Met</category>
+    <event>High Wind Warning</event>
+    <urgency>Past</urgency>
+    <severity>Minor</severity>
+    <certainty>Observed</certainty>
+    <effective>2026-10-01T10:00:00+05:30</effective>
+    <expires>2026-10-01T18:00:00+05:30</expires>
+    <headline>Expired Wind Warning</headline>
+    <area>
+      <areaDesc>Delhi</areaDesc>
+    </area>
+  </info>
+</alert>
