@@ -155,3 +155,60 @@ async def test_tomtom_idempotent_ingestion_and_correlation(
     assert insight.signals[1].source_name == "tomtom_traffic"
     assert "Delay: +30 mins" in insight.signals[1].metric_summary
 
+
+@pytest.mark.asyncio
+async def test_sachet_worker_expiry_and_duplicate_persistence(
+    db_session,
+    valid_cap_xml,
+    expired_cap_xml,
+):
+    mock_weather = AsyncMock()
+    mock_weather.provider_name = "weatherapi"
+    mock_traffic = AsyncMock()
+    mock_traffic.provider_name = "tomtom_traffic"
+
+    mock_sachet = AsyncMock()
+    mock_sachet.provider_name = "sachet_cap"
+    # First sync returns both active and expired alert
+    active_alerts = parse_cap_xml_payload(valid_cap_xml)
+    expired_alerts = parse_cap_xml_payload(expired_cap_xml)
+    mock_sachet.fetch_alerts.return_value = active_alerts + expired_alerts
+
+    worker = IngestionWorker(
+        weather_client=mock_weather,
+        traffic_client=mock_traffic,
+        sachet_client=mock_sachet,
+    )
+    worker.ensure_data_sources(db_session)
+
+    # 1. First Sync: Persist both notices
+    log = await worker.sync_sachet(db_session)
+    assert log.status == "SUCCESS"
+    assert log.records_fetched == 2
+    assert log.records_persisted == 2
+
+    notices = db_session.query(GovernmentNotice).all()
+    assert len(notices) == 2
+
+    active_notice = db_session.query(GovernmentNotice).filter_by(alert_identifier="NDMA-CAP-2026-DEL-0841").first()
+    expired_notice = db_session.query(GovernmentNotice).filter_by(alert_identifier="NDMA-CAP-2026-DEL-EXPIRED").first()
+
+    assert active_notice.is_active is True
+    assert expired_notice.is_active is False
+
+    # 2. Second Sync (Duplicate / Idempotency Check)
+    log2 = await worker.sync_sachet(db_session)
+    assert log2.status == "SUCCESS"
+    assert log2.records_persisted == 0  # Zero new records inserted!
+    assert db_session.query(GovernmentNotice).count() == 2  # No duplicate rows created
+
+    # 3. Expiry Transition Check: If time passes and active notice expires
+    active_notice.expires_at = datetime.datetime.utcnow() - datetime.timedelta(minutes=5)
+    db_session.commit()
+
+    # Re-running sync deactivates expired notice
+    await worker.sync_sachet(db_session)
+    db_session.refresh(active_notice)
+    assert active_notice.is_active is False
+
+

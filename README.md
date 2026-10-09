@@ -4,19 +4,19 @@
 
 ---
 
-## Current Status: Milestone 1 Completed (Core Signal Ingestion & Normalization Engine)
+## Current Status: Milestone 1.2 Completed (SACHET Feed Validation & Data Readiness)
 
-Milestone 1 establishes the headless signal ingestion, normalization, database persistence, and deterministic cross-signal correlation engine without mobile UI or LLM dependencies.
+Milestone 1 & 1.2 establish the headless signal ingestion, normalization, database persistence, and deterministic cross-signal correlation engine without mobile UI or LLM dependencies.
 
 ### Validated Capabilities:
 - **WeatherAPI Integration:** Real-time and hourly forecast ingestion with 60-minute in-memory caching.
 - **TomTom Traffic v5 Integration (Primary):** Live incident, delay, and road congestion ingestion across configured pilot bounding boxes (`TOMTOM_API_KEY`).
 - **HERE Traffic v7 Integration (Alternative):** Compatible fallback provider selectable via `TRAFFIC_PROVIDER="here"`.
-- **NDMA SACHET Integration:** Safe OASIS CAP v1.2 XML parsing with GeoJSON polygon extraction and entity-attack protection.
+- **NDMA SACHET Public Notice Integration (Verified):** Official RSS syndication index (`rss_india.xml`) and OASIS CAP v1.2 XML detail retrieval (`FetchXMLFile`) with HTTP 304 ETag bandwidth caching and defusedxml protection.
 - **Deterministic Correlation Engine:** Evaluates **Scenario D (Monsoon Commute & Congestion)** using pure-Python Haversine proximity, time-window checking, and compound thresholds (compatible with TomTom delay/criticality and HERE jamFactor).
 - **Full Signal Provenance:** Every emitted intelligence insight embeds its supporting raw observation IDs, timestamps, and confidence scores.
 - **Zero Duplicate Storage:** Idempotent ingestion and SHA-256 deduplication hash indexing.
-- **48 Automated Tests Passing:** 100% test coverage across normalization, CAP parsing, correlation rules, database persistence, and API contracts.
+- **56 Automated Tests Passing:** 100% test coverage across normalization, CAP parsing, correlation rules, database persistence, and API contracts.
 
 ---
 
@@ -97,6 +97,7 @@ cp .env.example .env
 - [`docs/phase-1/architecture.md`](file:///c:/Users/divya/OneDrive/Desktop/AKGEC/docs/phase-1/architecture.md) — Modular monolith system architecture.
 - [`docs/phase-1/data-model.md`](file:///c:/Users/divya/OneDrive/Desktop/AKGEC/docs/phase-1/data-model.md) — PostgreSQL / SQLite schema specifications for all 7 tables.
 - [`docs/phase-1/provider-setup.md`](file:///c:/Users/divya/OneDrive/Desktop/AKGEC/docs/phase-1/provider-setup.md) — External provider onboarding and API keys.
+- [`docs/phase-1/sachet-validation-report.md`](file:///c:/Users/divya/OneDrive/Desktop/AKGEC/docs/phase-1/sachet-validation-report.md) — NDMA SACHET feed resolution and data readiness validation report.
 - [`docs/phase-1/correlation-rules.md`](file:///c:/Users/divya/OneDrive/Desktop/AKGEC/docs/phase-1/correlation-rules.md) — Deterministic mathematical specification of Scenario D.
 - [`docs/phase-1/testing.md`](file:///c:/Users/divya/OneDrive/Desktop/AKGEC/docs/phase-1/testing.md) — Automated test suite and 24-hour soak-test procedure.
 - [`docs/phase-1/operations.md`](file:///c:/Users/divya/OneDrive/Desktop/AKGEC/docs/phase-1/operations.md) — Solo-founder operational procedures and quota safety.

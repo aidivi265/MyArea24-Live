@@ -98,6 +98,35 @@ def malformed_cap_xml():
 
 
 @pytest.fixture
+def sample_sachet_rss_index():
+    return """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>All India: CAP Disaster Alert Feeds</title>
+    <description>CAP Integrated Alert System Warning Updates</description>
+    <item>
+      <title>Severe Thunderstorm warning for Delhi-NCR</title>
+      <guid>1791552348353007</guid>
+      <link>https://sachet.ndma.gov.in/cap_public_website/FetchXMLFile?identifier=1791552348353007</link>
+      <pubDate>Fri, 09 Oct 2026 13:25:51 GMT</pubDate>
+      <author>IMD-New-Delhi</author>
+      <category>Met</category>
+    </item>
+    <item>
+      <title>Moderate Rain with Lightning in Chennai</title>
+      <guid>1791552348353008</guid>
+      <link>https://sachet.ndma.gov.in/cap_public_website/FetchXMLFile?identifier=1791552348353008</link>
+      <pubDate>Fri, 09 Oct 2026 13:20:00 GMT</pubDate>
+      <author>IMD-Chennai</author>
+      <category>Met</category>
+    </item>
+  </channel>
+</rss>
+"""
+
+
+
+@pytest.fixture
 def tomtom_heavy_traffic_fixture(fixtures_dir):
     with open(fixtures_dir / "tomtom_traffic_heavy.json", "r", encoding="utf-8") as f:
         return json.load(f)

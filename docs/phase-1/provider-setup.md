@@ -63,11 +63,19 @@ Before activating live ingestion in `.env`:
 
 ### 2.4 NDMA SACHET CAP Feed Setup
 1. SACHET requires **zero registration or API keys**. It is the official emergency disaster alerting portal of the Government of India.
-2. The standard national/regional CAP RSS feed endpoint is configured in `.env`:
-   ```env
-   SACHET_FEED_URL=https://sachet.ndma.gov.in/backend/cap/rss/all/en
-   ```
-3. Feeds are retrieved over HTTPS with standard `defusedxml` parser sanitization.
+2. The official production CAP RSS feed endpoints published by NDMA / WMO are configured in `.env`:
+   - **All-India Master Feed:**
+     ```env
+     SACHET_FEED_URL=https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml
+     SACHET_MAX_ITEMS_PER_POLL=20
+     ```
+   - **Regional / State-Specific Feeds (Optional Alternative):**
+     ```env
+     SACHET_FEED_URL=https://sachet.ndma.gov.in/cap_public_website/rss/rss_delhi.xml
+     ```
+3. **ETag Conditional Caching:** Per NDMA integration specifications, `SACHETClient` sends `If-None-Match` HTTP headers with the server's ETag. When no new alerts are issued, the server returns HTTP 304 Not Modified, transferring zero alert payload and saving bandwidth.
+4. **Detail XML Resolving:** The RSS index contains links to official OASIS CAP v1.2 XML documents (`/cap_public_website/FetchXMLFile?identifier=...`). `SACHETClient` fetches detail CAP files concurrently with an `asyncio.Semaphore(5)` to extract precise polygons, circles, severity, and timestamps.
+5. Feeds and detail XML payloads are parsed using `defusedxml` to guarantee entity-attack and XXE protection.
 
 ---
 
@@ -88,16 +96,18 @@ MyArea24 — External Provider Smoke Test
 
 --- 1. Testing WeatherAPI.com ---
 [+] WeatherAPI SUCCESS: Received 25 normalized records.
-    Location: Delhi AIIMS Ring Road | Temp: 28.0°C | Precip: 0.0 mm/hr (Clear)
+    Location: New Delhi | Temp: 32.6°C | Precip: 0.0 mm/hr (Clear)
 
---- 2. Testing HERE Traffic API v7 ---
-[+] HERE Traffic SUCCESS: Received 8 incidents in pilot bbox.
-    Type: CONGESTION | Jam Factor: 7.2 | Delay: 980s | Road: Ring Road
+--- 2. Testing Traffic API (Configured Provider: tomtom) ---
+[+] TomTom Traffic v5 SUCCESS: Received 239 incidents in pilot bbox.
+    Type: CONGESTION | Criticality: major | Delay: 289s | Road: Bhagwan Mahaveer Marg -> Abdul Gaffar Khan Marg
+    Jam Factor: None (Strictly None - not fabricated)
 
 --- 3. Testing NDMA SACHET Public CAP Feed ---
-[+] NDMA SACHET SUCCESS: Received 12 active public disaster notices.
-    Alert ID: NDMA-CAP-2026-IN-1029 | Severity: Moderate | Event: Thunderstorm
-    Headline: Thunderstorm with lightning warning for Western Himalayan Region...
+[+] NDMA SACHET SUCCESS: Received 20 active public disaster notices.
+    Alert ID: IN-1791553740889019_19 | Severity: Moderate | Event: Thunderstorm
+    Headline: Thunderstorm is likely to occur at isolated places over Chamarajanagara...
 
 Smoke test run completed.
 ```
+

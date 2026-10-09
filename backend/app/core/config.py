@@ -56,8 +56,10 @@ class Settings(BaseSettings):
     TRAFFIC_POLL_INTERVAL_MINUTES: int = 10
 
     # NDMA SACHET
-    SACHET_FEED_URL: str = "https://sachet.ndma.gov.in/backend/cap/rss/all/en"
+    SACHET_FEED_URL: str = "https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml"
     SACHET_POLL_INTERVAL_MINUTES: int = 15
+    SACHET_MAX_ITEMS_PER_POLL: int = 20
+    SACHET_DETAIL_FETCH_TIMEOUT: float = 8.0
 
     # HTTP Client Controls
     HTTP_TIMEOUT_SECONDS: float = 10.0

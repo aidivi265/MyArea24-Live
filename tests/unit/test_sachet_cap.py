@@ -3,6 +3,7 @@ from backend.app.normalization.alerts import (
     parse_cap_xml_payload,
     parse_cap_polygon,
     parse_cap_circle,
+    extract_rss_item_links,
 )
 
 
@@ -51,3 +52,25 @@ def test_circle_parser():
     assert circle is not None
     assert circle["center"] == [77.2100, 28.5672]
     assert circle["radius_km"] == 15.5
+
+
+def test_extract_rss_item_links(sample_sachet_rss_index):
+    links = extract_rss_item_links(sample_sachet_rss_index)
+    assert len(links) == 2
+    assert links[0][0] == "1791552348353007"
+    assert "FetchXMLFile?identifier=1791552348353007" in links[0][1]
+    assert links[1][0] == "1791552348353008"
+
+
+def test_rss_index_fallback_parsing(sample_sachet_rss_index):
+    # Parsing an RSS feed directly produces fallback NormalizedAlertRecords
+    records = parse_cap_xml_payload(sample_sachet_rss_index)
+    assert len(records) == 2
+    rec = records[0]
+    assert rec.alert_identifier == "1791552348353007"
+    assert "Severe Thunderstorm warning" in rec.headline
+    assert rec.sender == "IMD-New-Delhi"
+    assert rec.event_type == "Met"
+    assert rec.severity == "Moderate"
+    assert rec.is_active is True
+

@@ -2,7 +2,7 @@
 
 **Phase:** Phase 1 (Milestone 1)  
 **Test Suite:** Pytest (Unit & Integration Tests)  
-**Total Automated Tests:** 48 Passed (0 Failed)  
+**Total Automated Tests:** 56 Passed (0 Failed)  
 
 ---
 
@@ -17,7 +17,7 @@ All tests execute entirely against isolated, in-memory SQLite fixtures (`StaticP
 
 Expected output:
 ```text
-======================== 48 passed in 1.22s ========================
+======================== 56 passed in 1.62s ========================
 ```
 
 ---
@@ -34,12 +34,14 @@ Expected output:
    - TomTom v5 traffic normal flow normalization.
    - TomTom v5 missing metrics handling (gracefully normalizes sparse data).
    - TomTom v5 malformed / non-dict payload protection.
-2. **`test_sachet_cap.py` (5 tests):**
+2. **`test_sachet_cap.py` (7 tests):**
    - OASIS CAP v1.2 XML parsing with defusedxml protection.
    - Coordinate order inversion (CAP lat,lon to GeoJSON [lon, lat]).
    - Circle geometry extraction with radius in km.
    - Expired alert detection (`is_active = False`).
    - Malformed XML resilience (graceful empty return without unhandled crash).
+   - RSS 2.0 item link extraction (`extract_rss_item_links`).
+   - RSS 2.0 index fallback parsing when no `<alert>` tags exist.
 3. **`test_correlation.py` (9 tests):**
    - Haversine distance accuracy between known coordinates.
    - IST evaluation window calculation (17:30 to 20:30 IST).
@@ -50,12 +52,17 @@ Expected output:
    - Negative rejection when rainfall is below threshold ($2.5\text{ mm/hr} < 8.0\text{ mm/hr}$).
    - Negative rejection when signals are geographically separated ($> 5.0\text{ km}$).
    - Negative rejection when weather signals are stale ($> 60\text{ minutes}$).
-4. **`test_adapters.py` (12 tests):**
+4. **`test_adapters.py` (16 tests):**
    - Missing credential guards for WeatherAPI, HERE, and TomTom raising typed `ProviderAuthError`.
    - In-memory 60-minute TTL cache verification for WeatherAPI.
    - In-memory 5-minute TTL cache verification for TomTom traffic.
    - HERE traffic incident querying.
-   - SACHET XML retrieval.
+   - SACHET direct CAP XML retrieval.
+   - SACHET HTTP 404 error translation (`ProviderError` with `status_code=404`).
+   - SACHET request timeout handling (`ProviderTimeoutError`).
+   - SACHET ETag conditional caching (HTTP 304 Not Modified).
+   - SACHET RSS 2.0 index parsing with concurrent detail CAP fetching.
+   - SACHET duplicate alert deduplication by `alert_identifier`.
    - TomTom authentication error (HTTP 401/403 -> `ProviderAuthError`).
    - TomTom rate limit error (HTTP 429 -> `ProviderRateLimitError`).
    - TomTom timeout error (`ProviderTimeoutError`).
@@ -70,9 +77,10 @@ Expected output:
    - Pilot traffic bounding box coordinate parsing.
 
 ### 2.2 Integration Tests (`tests/integration/`)
-1. **`test_ingestion.py` (2 tests):**
+1. **`test_ingestion.py` (3 tests):**
    - Idempotent ingestion, deduplication, and correlation with HERE traffic adapter.
    - Idempotent ingestion, deduplication, and correlation with TomTom traffic adapter (`source_id="tomtom_traffic"`).
+   - SACHET notice persistence, duplicate update idempotency, and automated expiry deactivation (`is_active = False`).
 2. **`test_database.py` (3 tests):**
    - Table initialization and DataSource record persistence.
    - Unique constraint enforcement preventing duplicate `source_record_id` entries.

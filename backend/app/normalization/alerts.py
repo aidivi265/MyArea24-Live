@@ -28,7 +28,7 @@ def _parse_iso_utc(date_str: Optional[str], default: datetime.datetime) -> datet
     if not date_str:
         return default
     try:
-        dt = dt_parser.isoparse(date_str)
+        dt = dt_parser.parse(date_str)
         if dt.tzinfo is not None:
             return dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
         return dt
@@ -41,6 +41,31 @@ def _clean_tag(tag: str) -> str:
     if "}" in tag:
         return tag.split("}", 1)[1]
     return tag
+
+
+def extract_rss_item_links(xml_content: str | bytes) -> List[tuple[str, str]]:
+    """
+    Extracts (identifier, link) tuples from an RSS 2.0 or Atom feed.
+    Guaranteed safe XML parsing via defusedxml.
+    """
+    results: List[tuple[str, str]] = []
+    try:
+        if isinstance(xml_content, str):
+            xml_bytes = xml_content.encode("utf-8")
+        else:
+            xml_bytes = xml_content
+
+        root = ET.fromstring(xml_bytes)
+    except Exception:
+        return []
+
+    for item in root.findall(".//item"):
+        link = (item.findtext("link") or "").strip()
+        guid = (item.findtext("guid") or "").strip()
+        if link:
+            results.append((guid or link, link))
+
+    return results
 
 
 def parse_cap_polygon(polygon_text: str) -> Optional[Dict[str, Any]]:
@@ -188,5 +213,42 @@ def parse_cap_xml_payload(xml_content: str | bytes) -> List[NormalizedAlertRecor
                 is_active=is_active,
             )
         )
+
+    # Fallback for pure RSS 2.0 feeds without embedded <alert> tags
+    if not records and root_tag == "rss":
+        for item in root.findall(".//item"):
+            guid = (item.findtext("guid") or item.findtext("link") or "").strip()
+            title = (item.findtext("title") or "").strip()
+            if not title:
+                continue
+            identifier = guid or f"rss:{abs(hash(title))}"
+            author = (item.findtext("author") or "NDMA SACHET").strip()
+            category = (item.findtext("category") or "Public Advisory").strip()
+            description = (item.findtext("description") or "").strip()
+            pub_date = (item.findtext("pubDate") or "").strip()
+            effective_at = _parse_iso_utc(pub_date, now)
+            expires_at = effective_at + datetime.timedelta(hours=6)
+            is_active = expires_at > now
+
+            records.append(
+                NormalizedAlertRecord(
+                    source_id="sachet_cap",
+                    alert_identifier=identifier,
+                    sender=author,
+                    event_type=category,
+                    severity="Moderate",
+                    urgency="Expected",
+                    certainty="Likely",
+                    headline=title,
+                    description=description or None,
+                    instruction="Follow official district disaster management guidelines.",
+                    area_description="Affected Region / District",
+                    polygon_geojson=None,
+                    circle_geojson=None,
+                    effective_at=effective_at,
+                    expires_at=expires_at,
+                    is_active=is_active,
+                )
+            )
 
     return records

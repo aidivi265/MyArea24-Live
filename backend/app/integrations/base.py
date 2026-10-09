@@ -51,6 +51,9 @@ class BaseProviderClient:
                         logger.error(f"[{self.provider_name}] Payment/Quota required: HTTP 402")
                         raise ProviderQuotaError(self.provider_name, "Quota/Payment exhausted", status_code=402)
 
+                    if response.status_code == 304:
+                        return response
+
                     response.raise_for_status()
                     return response
 

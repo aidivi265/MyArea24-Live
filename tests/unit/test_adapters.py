@@ -83,6 +83,90 @@ async def test_sachet_client_success(valid_cap_xml):
 
 
 @pytest.mark.asyncio
+async def test_sachet_client_http_404():
+    client = SACHETClient(feed_url="https://sachet.ndma.gov.in/backend/cap/rss/all/en")
+    with patch.object(client, "_get", new_callable=AsyncMock) as mock_get:
+        mock_get.side_effect = ProviderError("sachet_cap", "HTTP error 404: Not Found", status_code=404)
+        with pytest.raises(ProviderError) as exc_info:
+            await client.fetch_alerts()
+        assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_sachet_client_timeout():
+    client = SACHETClient(feed_url="https://mock.sachet.gov.in/feed.xml")
+    with patch.object(client, "_get", new_callable=AsyncMock) as mock_get:
+        mock_get.side_effect = ProviderTimeoutError("sachet_cap", "Request timed out")
+        with pytest.raises(ProviderTimeoutError, match="Request timed out"):
+            await client.fetch_alerts()
+
+
+@pytest.mark.asyncio
+async def test_sachet_client_etag_304(valid_cap_xml):
+    client = SACHETClient(feed_url="https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml")
+
+    # First request returns 200 with ETag header
+    resp_200 = httpx.Response(
+        200,
+        content=valid_cap_xml.encode("utf-8"),
+        headers={"etag": 'W/"test-etag-789"'},
+    )
+    # Second request returns 304 Not Modified
+    resp_304 = httpx.Response(304)
+
+    with patch.object(client, "_get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = resp_200
+        records1 = await client.fetch_alerts()
+        assert len(records1) == 1
+        assert client._etag == 'W/"test-etag-789"'
+
+        # Simulate conditional check with server returning 304
+        mock_get.return_value = resp_304
+        records2 = await client.fetch_alerts(bypass_cache=True)
+        assert len(records2) == 1
+        assert records2[0].alert_identifier == "NDMA-CAP-2026-DEL-0841"
+
+
+@pytest.mark.asyncio
+async def test_sachet_client_rss_index_with_detail_links(sample_sachet_rss_index, valid_cap_xml, expired_cap_xml):
+    client = SACHETClient(feed_url="https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml")
+
+    async def fake_get(url, *args, **kwargs):
+        if "rss" in url or "feed" in url:
+            return httpx.Response(200, content=sample_sachet_rss_index.encode("utf-8"))
+        if "1791552348353007" in url:
+            return httpx.Response(200, content=valid_cap_xml.encode("utf-8"))
+        if "1791552348353008" in url:
+            return httpx.Response(200, content=expired_cap_xml.encode("utf-8"))
+        return httpx.Response(404)
+
+    with patch.object(client, "_get", side_effect=fake_get):
+        records = await client.fetch_alerts()
+        assert len(records) == 2
+        ids = {r.alert_identifier for r in records}
+        assert "NDMA-CAP-2026-DEL-0841" in ids
+        assert "NDMA-CAP-2026-DEL-EXPIRED" in ids
+
+
+@pytest.mark.asyncio
+async def test_sachet_client_duplicate_alerts_deduplication(sample_sachet_rss_index, valid_cap_xml):
+    client = SACHETClient(feed_url="https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml")
+
+    async def fake_get(url, *args, **kwargs):
+        if "rss" in url or "feed" in url:
+            return httpx.Response(200, content=sample_sachet_rss_index.encode("utf-8"))
+        # Both detail items return identical alert identifier
+        return httpx.Response(200, content=valid_cap_xml.encode("utf-8"))
+
+    with patch.object(client, "_get", side_effect=fake_get):
+        records = await client.fetch_alerts()
+        # Must deduplicate down to 1 distinct alert record
+        assert len(records) == 1
+        assert records[0].alert_identifier == "NDMA-CAP-2026-DEL-0841"
+
+
+
+@pytest.mark.asyncio
 async def test_tomtom_traffic_client_success_and_cache(tomtom_heavy_traffic_fixture):
     client = TomTomTrafficClient(api_key="test_tomtom_key")
     mock_resp = httpx.Response(200, json=tomtom_heavy_traffic_fixture)
