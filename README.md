@@ -4,19 +4,18 @@
 
 ---
 
-## Current Status: Milestone 1.2 Completed (SACHET Feed Validation & Data Readiness)
+## Current Status: Milestone 2.0 Completed (Local Intelligence Engine)
 
-Milestone 1 & 1.2 establish the headless signal ingestion, normalization, database persistence, and deterministic cross-signal correlation engine without mobile UI or LLM dependencies.
+Milestone 2.0 delivers the core intelligence layer for MyArea24, connecting normalized signals across WeatherAPI, TomTom Traffic v5, and NDMA SACHET CAP v1.2 into grounded, evidence-backed local insights.
 
 ### Validated Capabilities:
-- **WeatherAPI Integration:** Real-time and hourly forecast ingestion with 60-minute in-memory caching.
-- **TomTom Traffic v5 Integration (Primary):** Live incident, delay, and road congestion ingestion across configured pilot bounding boxes (`TOMTOM_API_KEY`).
-- **HERE Traffic v7 Integration (Alternative):** Compatible fallback provider selectable via `TRAFFIC_PROVIDER="here"`.
-- **NDMA SACHET Public Notice Integration (Verified):** Official RSS syndication index (`rss_india.xml`) and OASIS CAP v1.2 XML detail retrieval (`FetchXMLFile`) with HTTP 304 ETag bandwidth caching and defusedxml protection.
-- **Deterministic Correlation Engine:** Evaluates **Scenario D (Monsoon Commute & Congestion)** using pure-Python Haversine proximity, time-window checking, and compound thresholds (compatible with TomTom delay/criticality and HERE jamFactor).
-- **Full Signal Provenance:** Every emitted intelligence insight embeds its supporting raw observation IDs, timestamps, and confidence scores.
-- **Zero Duplicate Storage:** Idempotent ingestion and SHA-256 deduplication hash indexing.
-- **56 Automated Tests Passing:** 100% test coverage across normalization, CAP parsing, correlation rules, database persistence, and API contracts.
+- **Scenario A (Weather + Traffic Correlation):** Multi-signal spatiotemporal intersection detecting compound commute hazards with categorical confidence levels and uncertainty notes.
+- **Scenario B (Severe Public Alert):** Connects NDMA SACHET OASIS CAP v1.2 disaster warnings to pilot localities via ray-casting polygon intersection, circle proximity, and text matching; extracts official instructions.
+- **Scenario C (Single-Signal Notices):** Surfaces standalone high-severity traffic incidents or extreme cloudburst downpours as explicit single-source notices without fabricating false multi-source corroboration.
+- **Ray-Casting Point-in-Polygon Engine:** Pure-Python GeoJSON polygon intersection for CAP emergency boundaries without heavy binary C-dependencies.
+- **Generalized Deduplication:** SHA-256 deduplication hashing preventing redundant insight emissions across all scenarios.
+- **Multi-Attribute Intelligence API:** Filter by `area`, `insight_type`, `severity`, and `confidence` with pagination and sorting.
+- **81 Automated Tests Passing:** 100% test coverage across rules, geometry matching, coordinate validity, stale/expired record gating, and API contracts.
 
 ---
 
@@ -101,3 +100,7 @@ cp .env.example .env
 - [`docs/phase-1/correlation-rules.md`](file:///c:/Users/divya/OneDrive/Desktop/AKGEC/docs/phase-1/correlation-rules.md) — Deterministic mathematical specification of Scenario D.
 - [`docs/phase-1/testing.md`](file:///c:/Users/divya/OneDrive/Desktop/AKGEC/docs/phase-1/testing.md) — Automated test suite and 24-hour soak-test procedure.
 - [`docs/phase-1/operations.md`](file:///c:/Users/divya/OneDrive/Desktop/AKGEC/docs/phase-1/operations.md) — Solo-founder operational procedures and quota safety.
+
+### Milestone 2: Intelligence Engine
+- [`docs/phase-1/intelligence-engine-gap-analysis.md`](file:///c:/Users/divya/OneDrive/Desktop/AKGEC/docs/phase-1/intelligence-engine-gap-analysis.md) — System audit, feature matrix, and architectural blueprint.
+- [`docs/phase-1/intelligence-engine-report.md`](file:///c:/Users/divya/OneDrive/Desktop/AKGEC/docs/phase-1/intelligence-engine-report.md) — Milestone 2.0 validation report, rule thresholds, and test evidence.

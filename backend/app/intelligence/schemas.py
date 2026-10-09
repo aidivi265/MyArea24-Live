@@ -5,9 +5,10 @@ from pydantic import BaseModel, Field
 
 class SignalProvenance(BaseModel):
     type: str  # 'weather', 'traffic', 'alert'
-    source: str  # 'weatherapi', 'here_traffic', 'sachet_cap'
+    source: str  # 'weatherapi', 'tomtom_traffic', 'here_traffic', 'sachet_cap'
     observation_id: int | str
     observed_at: datetime.datetime
+    freshness_minutes: Optional[float] = None
     metric_summary: str
 
 
@@ -26,12 +27,17 @@ class IntelligenceInsightOutput(BaseModel):
     summary: str
     potential_impact: str
     recommendation: str
-    evidence_quality: str  # 'supported', 'insufficient_evidence'
-    composite_severity: str  # 'minor', 'moderate', 'high', 'severe'
-    signals: List[SignalProvenance]
+    evidence_quality: str = "supported"  # 'supported', 'insufficient_evidence'
+    composite_severity: str = "high"  # 'minor', 'moderate', 'high', 'severe'
+    confidence_level: str = "HIGH (Multi-Source Corroborated)"
+    rule_identifier: str = "SCENARIO_A_WEATHER_TRAFFIC"
+    rule_version: str = "1.0"
+    data_quality_notes: Optional[str] = None
+    observed_at: Optional[datetime.datetime] = None
     created_at: datetime.datetime
     expires_at: datetime.datetime
-    rule_version: str = "1.0"
+    next_review_at: Optional[datetime.datetime] = None
+    signals: List[SignalProvenance] = []
 
 
 class RuleEvaluationResult(BaseModel):
@@ -40,3 +46,4 @@ class RuleEvaluationResult(BaseModel):
     insight: Optional[IntelligenceInsightOutput] = None
     supporting_weather_id: Optional[int] = None
     supporting_traffic_id: Optional[int] = None
+    supporting_notice_id: Optional[int] = None

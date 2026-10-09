@@ -148,17 +148,23 @@ class IntelligenceInsight(Base):
     recommendation = Column(Text, nullable=False)
     evidence_quality = Column(String(50), nullable=False)  # 'supported', 'insufficient_evidence'
     composite_severity = Column(String(20), nullable=False)  # 'minor', 'moderate', 'high', 'severe'
-    dedup_hash = Column(String(64), unique=True, nullable=False)
-    is_active = Column(Boolean, default=True, nullable=False)
+    confidence_level = Column(String(50), default="HIGH (Multi-Source Corroborated)", nullable=False)
+    rule_identifier = Column(String(100), default="SCENARIO_A_WEATHER_TRAFFIC", nullable=False)
+    rule_version = Column(String(20), default="1.0", nullable=False)
+    data_quality_notes = Column(Text, nullable=True)
+    observed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
     expires_at = Column(DateTime, nullable=False)
-    rule_version = Column(String(20), default="1.0", nullable=False)
+    next_review_at = Column(DateTime, nullable=True)
+    dedup_hash = Column(String(64), unique=True, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
 
     signals = relationship("IntelligenceSignal", back_populates="insight", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_insights_area_created", "area_label", "created_at"),
         Index("ix_insights_active_expires", "is_active", "expires_at"),
+        Index("ix_insights_type_severity", "insight_type", "composite_severity"),
     )
 
 

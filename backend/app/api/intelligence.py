@@ -20,17 +20,28 @@ class PaginatedInsightsResponse(BaseModel):
 @router.get("", response_model=PaginatedInsightsResponse)
 def list_insights(
     area: Optional[str] = Query(None, description="Filter by locality or pilot area name"),
+    insight_type: Optional[str] = Query(None, description="Filter by insight type (e.g. weather_traffic_correlation, severe_public_alert, single_signal_traffic_notice)"),
+    severity: Optional[str] = Query(None, description="Filter by composite severity (minor, moderate, high, severe)"),
+    confidence: Optional[str] = Query(None, description="Filter by confidence level (e.g. HIGH, MEDIUM)"),
     is_active: Optional[bool] = Query(True, description="Filter by active status"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_db),
 ):
     """
-    Retrieves cross-signal intelligence insights with source provenance and filtering.
+    Retrieves cross-signal intelligence insights with source provenance and multi-dimensional filtering.
     """
     service = IntelligenceService(db)
     skip = (page - 1) * page_size
-    items, total = service.get_insights(area=area, is_active=is_active, skip=skip, limit=page_size)
+    items, total = service.get_insights(
+        area=area,
+        insight_type=insight_type,
+        severity=severity,
+        confidence=confidence,
+        is_active=is_active,
+        skip=skip,
+        limit=page_size,
+    )
 
     return PaginatedInsightsResponse(
         items=items,
