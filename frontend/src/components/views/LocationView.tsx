@@ -154,6 +154,7 @@ export const LocationView: React.FC<LocationViewProps> = ({
               onClick={() => {
                 onSelectArea(loc.name);
                 saveSelectedLocation(loc.name);
+                onNavigateHome();
               }}
             >
               <div className="locality-card-top">
