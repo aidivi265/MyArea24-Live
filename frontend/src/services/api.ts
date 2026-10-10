@@ -210,6 +210,27 @@ export async function fetchInsights(
   page: number = 1,
   pageSize: number = 20
 ): Promise<PaginatedInsightsResponse> {
+  // Graceful fallback for standalone hosted web demos (e.g. GitHub Pages)
+  if (isHostedWebDemo) {
+    let filtered = [...STANDALONE_PILOT_INSIGHTS];
+    if (filters.area && filters.area.trim()) {
+      const areaQ = filters.area.toLowerCase().trim();
+      filtered = filtered.filter((i) => i.area.label.toLowerCase().includes(areaQ));
+    }
+    if (filters.severity && filters.severity.trim()) {
+      filtered = filtered.filter((i) => i.composite_severity.toLowerCase() === filters.severity?.toLowerCase());
+    }
+    if (filters.insight_type && filters.insight_type.trim()) {
+      filtered = filtered.filter((i) => i.insight_type === filters.insight_type);
+    }
+    return {
+      items: filtered,
+      total: filtered.length,
+      page: 1,
+      page_size: pageSize,
+    };
+  }
+
   const params = new URLSearchParams();
 
   if (filters.area && filters.area.trim()) {
@@ -256,27 +277,6 @@ export async function fetchInsights(
       throw err;
     }
 
-    // Graceful fallback for standalone hosted web demos (e.g. GitHub Pages)
-    if (isHostedWebDemo) {
-      let filtered = [...STANDALONE_PILOT_INSIGHTS];
-      if (filters.area && filters.area.trim()) {
-        const areaQ = filters.area.toLowerCase().trim();
-        filtered = filtered.filter((i) => i.area.label.toLowerCase().includes(areaQ));
-      }
-      if (filters.severity && filters.severity.trim()) {
-        filtered = filtered.filter((i) => i.composite_severity.toLowerCase() === filters.severity?.toLowerCase());
-      }
-      if (filters.insight_type && filters.insight_type.trim()) {
-        filtered = filtered.filter((i) => i.insight_type === filters.insight_type);
-      }
-      return {
-        items: filtered,
-        total: filtered.length,
-        page: 1,
-        page_size: pageSize,
-      };
-    }
-
     throw new ApiError(
       `Unable to connect to MyArea24 Backend at ${API_BASE_URL}. Ensure the FastAPI server is running.`,
       0,
@@ -286,6 +286,11 @@ export async function fetchInsights(
 }
 
 export async function fetchInsightById(id: number): Promise<IntelligenceInsight> {
+  if (isHostedWebDemo) {
+    const fallback = STANDALONE_PILOT_INSIGHTS.find((i) => i.id === id);
+    if (fallback) return fallback;
+  }
+
   const url = `${API_BASE_URL}/api/v1/intelligence/${id}`;
 
   try {
@@ -320,7 +325,23 @@ export async function fetchInsightById(id: number): Promise<IntelligenceInsight>
   }
 }
 
+const PILOT_LOCALITIES: LocalityOption[] = [
+  { id: 'delhi-aiims-ring-road', name: 'Delhi AIIMS Ring Road', city: 'Delhi', state: 'Delhi', latitude: 28.5672, longitude: 77.2100, coverage_status: 'Active Pilot', is_live_supported: true, live_sources: ['WeatherAPI', 'TomTom Traffic', 'NDMA SACHET'] },
+  { id: 'delhi-connaught-place', name: 'Delhi Connaught Place', city: 'Delhi', state: 'Delhi', latitude: 28.6304, longitude: 77.2177, coverage_status: 'Active Pilot', is_live_supported: true, live_sources: ['WeatherAPI', 'TomTom Traffic', 'NDMA SACHET'] },
+  { id: 'delhi-rohini-sector-11', name: 'Delhi Rohini Sector 11', city: 'Delhi', state: 'Delhi', latitude: 28.7144, longitude: 77.1197, coverage_status: 'Active Pilot', is_live_supported: true, live_sources: ['WeatherAPI', 'TomTom Traffic', 'NDMA SACHET'] },
+  { id: 'bengaluru-silk-board', name: 'Bengaluru Silk Board', city: 'Bengaluru', state: 'Karnataka', latitude: 12.9176, longitude: 77.6233, coverage_status: 'Active Pilot', is_live_supported: true, live_sources: ['WeatherAPI', 'TomTom Traffic', 'NDMA SACHET'] },
+  { id: 'bengaluru-indiranagar', name: 'Bengaluru Indiranagar', city: 'Bengaluru', state: 'Karnataka', latitude: 12.9784, longitude: 77.6408, coverage_status: 'Active Pilot', is_live_supported: true, live_sources: ['WeatherAPI', 'TomTom Traffic', 'NDMA SACHET'] },
+  { id: 'mumbai-andheri-east', name: 'Mumbai Andheri East (WEH)', city: 'Mumbai', state: 'Maharashtra', latitude: 19.1136, longitude: 72.8697, coverage_status: 'Coverage Unavailable', is_live_supported: false, live_sources: [] },
+  { id: 'chennai-anna-nagar', name: 'Chennai Anna Nagar Roundtana', city: 'Chennai', state: 'Tamil Nadu', latitude: 13.0850, longitude: 80.2101, coverage_status: 'Coverage Unavailable', is_live_supported: false, live_sources: [] },
+  { id: 'kolkata-park-street', name: 'Kolkata Park Street Crossing', city: 'Kolkata', state: 'West Bengal', latitude: 22.5510, longitude: 88.3524, coverage_status: 'Coverage Unavailable', is_live_supported: false, live_sources: [] },
+  { id: 'hyderabad-hitec-city', name: 'Hyderabad Hitec City Cyber Towers', city: 'Hyderabad', state: 'Telangana', latitude: 17.4504, longitude: 78.3808, coverage_status: 'Coverage Unavailable', is_live_supported: false, live_sources: [] },
+];
+
 export async function fetchLocalities(): Promise<LocalityOption[]> {
+  if (isHostedWebDemo) {
+    return PILOT_LOCALITIES;
+  }
+
   const url = `${API_BASE_URL}/api/v1/intelligence/localities`;
 
   try {
@@ -338,17 +359,7 @@ export async function fetchLocalities(): Promise<LocalityOption[]> {
     return await res.json();
   } catch {
     // Static fallback to supported pilot localities in case server is starting or standalone demo
-    return [
-      { id: 'delhi-aiims-ring-road', name: 'Delhi AIIMS Ring Road', city: 'Delhi', state: 'Delhi', latitude: 28.5672, longitude: 77.2100, coverage_status: 'Active Pilot', is_live_supported: true, live_sources: ['WeatherAPI', 'TomTom Traffic', 'NDMA SACHET'] },
-      { id: 'delhi-connaught-place', name: 'Delhi Connaught Place', city: 'Delhi', state: 'Delhi', latitude: 28.6304, longitude: 77.2177, coverage_status: 'Active Pilot', is_live_supported: true, live_sources: ['WeatherAPI', 'TomTom Traffic', 'NDMA SACHET'] },
-      { id: 'delhi-rohini-sector-11', name: 'Delhi Rohini Sector 11', city: 'Delhi', state: 'Delhi', latitude: 28.7144, longitude: 77.1197, coverage_status: 'Active Pilot', is_live_supported: true, live_sources: ['WeatherAPI', 'TomTom Traffic', 'NDMA SACHET'] },
-      { id: 'bengaluru-silk-board', name: 'Bengaluru Silk Board', city: 'Bengaluru', state: 'Karnataka', latitude: 12.9176, longitude: 77.6233, coverage_status: 'Active Pilot', is_live_supported: true, live_sources: ['WeatherAPI', 'TomTom Traffic', 'NDMA SACHET'] },
-      { id: 'bengaluru-indiranagar', name: 'Bengaluru Indiranagar', city: 'Bengaluru', state: 'Karnataka', latitude: 12.9784, longitude: 77.6408, coverage_status: 'Active Pilot', is_live_supported: true, live_sources: ['WeatherAPI', 'TomTom Traffic', 'NDMA SACHET'] },
-      { id: 'mumbai-andheri-east', name: 'Mumbai Andheri East (WEH)', city: 'Mumbai', state: 'Maharashtra', latitude: 19.1136, longitude: 72.8697, coverage_status: 'Coverage Unavailable', is_live_supported: false, live_sources: [] },
-      { id: 'chennai-anna-nagar', name: 'Chennai Anna Nagar Roundtana', city: 'Chennai', state: 'Tamil Nadu', latitude: 13.0850, longitude: 80.2101, coverage_status: 'Coverage Unavailable', is_live_supported: false, live_sources: [] },
-      { id: 'kolkata-park-street', name: 'Kolkata Park Street Crossing', city: 'Kolkata', state: 'West Bengal', latitude: 22.5510, longitude: 88.3524, coverage_status: 'Coverage Unavailable', is_live_supported: false, live_sources: [] },
-      { id: 'hyderabad-hitec-city', name: 'Hyderabad Hitec City Cyber Towers', city: 'Hyderabad', state: 'Telangana', latitude: 17.4504, longitude: 78.3808, coverage_status: 'Coverage Unavailable', is_live_supported: false, live_sources: [] },
-    ];
+    return PILOT_LOCALITIES;
   }
 }
 
@@ -357,6 +368,28 @@ export async function fetchGovernmentAlerts(params: {
   is_active?: boolean;
   limit?: number;
 } = {}): Promise<GovernmentAlert[]> {
+  const standaloneAlerts: GovernmentAlert[] = [
+    {
+      id: 17,
+      alert_identifier: 'IN-1791550139529017_17',
+      sender: 'West-Bengal-SDMA',
+      event_type: 'Flood',
+      severity: 'Moderate',
+      urgency: 'Future',
+      headline: 'River Ganga at Farakka in Murshidabad district continues to flow in above normal flood situation.',
+      description: 'River Ganga at Farakka is flowing at 21.91 m, which is 0.66 m above Warning Level.',
+      instruction: 'Exercise caution along riverbanks and follow district disaster management advisories.',
+      area_description: 'Ganga, Farakka, Murshidabad, West Bengal',
+      effective_at: '2026-10-09T12:30:00',
+      expires_at: '2026-10-11T02:30:00',
+      is_active: true,
+    },
+  ];
+
+  if (isHostedWebDemo) {
+    return standaloneAlerts;
+  }
+
   const query = new URLSearchParams();
   if (params.state) query.set('state', params.state);
   if (params.is_active !== undefined) query.set('is_active', String(params.is_active));
@@ -371,23 +404,7 @@ export async function fetchGovernmentAlerts(params: {
     if (!res.ok) throw new Error('Alert fetch failed');
     return await res.json();
   } catch {
-    return [
-      {
-        id: 17,
-        alert_identifier: 'IN-1791550139529017_17',
-        sender: 'West-Bengal-SDMA',
-        event_type: 'Flood',
-        severity: 'Moderate',
-        urgency: 'Future',
-        headline: 'River Ganga at Farakka in Murshidabad district continues to flow in above normal flood situation.',
-        description: 'River Ganga at Farakka is flowing at 21.91 m, which is 0.66 m above Warning Level.',
-        instruction: 'Exercise caution along riverbanks and follow district disaster management advisories.',
-        area_description: 'Ganga, Farakka, Murshidabad, West Bengal',
-        effective_at: '2026-10-09T12:30:00',
-        expires_at: '2026-10-11T02:30:00',
-        is_active: true,
-      },
-    ];
+    return standaloneAlerts;
   }
 }
 
@@ -396,6 +413,17 @@ export async function fetchAirQuality(params: {
   lat?: number;
   lon?: number;
 }): Promise<AirQualityStatus> {
+  const standaloneAQI: AirQualityStatus = {
+    status: 'AWAITING_CONFIG',
+    is_stale: false,
+    attribution: 'Central Pollution Control Board (CPCB) / OpenAQ',
+    message: 'Awaiting OPENAQ_API_KEY configuration in environment. Zero synthetic data shown.',
+  };
+
+  if (isHostedWebDemo) {
+    return standaloneAQI;
+  }
+
   const query = new URLSearchParams();
   if (params.area) query.set('area', params.area);
   if (params.lat !== undefined) query.set('lat', String(params.lat));
@@ -417,12 +445,7 @@ export async function fetchAirQuality(params: {
 
     return await res.json();
   } catch {
-    return {
-      status: 'AWAITING_CONFIG',
-      is_stale: false,
-      attribution: 'Central Pollution Control Board (CPCB) / OpenAQ',
-      message: 'Awaiting OPENAQ_API_KEY configuration in environment. Zero synthetic data shown.',
-    };
+    return standaloneAQI;
   }
 }
 
@@ -431,6 +454,23 @@ export async function fetchWeatherStatus(params: {
   lat?: number;
   lon?: number;
 }): Promise<WeatherStatus> {
+  const standaloneWeather: WeatherStatus = {
+    is_available: true,
+    location_name: params.area || 'Delhi AIIMS Ring Road',
+    temperature_c: 28.2,
+    precipitation_mm: 0.0,
+    condition_text: 'Clear',
+    wind_kph: 15.5,
+    humidity: 48,
+    observed_at: '2026-10-09T17:30:00',
+    source: 'WeatherAPI',
+    message: 'Verified live telemetry from WeatherAPI meteorological station.',
+  };
+
+  if (isHostedWebDemo) {
+    return standaloneWeather;
+  }
+
   const query = new URLSearchParams();
   if (params.area) query.set('area', params.area);
   if (params.lat !== undefined) query.set('lat', String(params.lat));
@@ -442,18 +482,7 @@ export async function fetchWeatherStatus(params: {
     if (!res.ok) throw new ApiError(`HTTP ${res.status} fetching weather`, res.status);
     return await res.json();
   } catch {
-    return {
-      is_available: true,
-      location_name: params.area || 'Delhi AIIMS Ring Road',
-      temperature_c: 28.2,
-      precipitation_mm: 0.0,
-      condition_text: 'Clear',
-      wind_kph: 15.5,
-      humidity: 48,
-      observed_at: '2026-10-09T17:30:00',
-      source: 'WeatherAPI',
-      message: 'Verified live telemetry from WeatherAPI meteorological station.',
-    };
+    return standaloneWeather;
   }
 }
 
@@ -463,6 +492,32 @@ export async function fetchTrafficStatus(params: {
   lon?: number;
   limit?: number;
 }): Promise<TrafficStatus> {
+  const standaloneTraffic: TrafficStatus = {
+    is_available: true,
+    total_incidents: 25,
+    area: params.area || 'Delhi AIIMS Ring Road',
+    incidents: [
+      {
+        id: 142,
+        incident_type: 'CONGESTION',
+        criticality: 'major',
+        road_name: 'Bhairon Marg -> Mahatma Gandhi Marg',
+        description: 'Queuing traffic',
+        latitude: 28.6121,
+        longitude: 77.2478,
+        delay_seconds: 605,
+        jam_factor: 8.5,
+        observed_at: '2026-10-09T13:35:00',
+      },
+    ],
+    source: 'TomTom Traffic API v5',
+    message: 'Retrieved active TomTom traffic incidents.',
+  };
+
+  if (isHostedWebDemo) {
+    return standaloneTraffic;
+  }
+
   const query = new URLSearchParams();
   if (params.area) query.set('area', params.area);
   if (params.lat !== undefined) query.set('lat', String(params.lat));
@@ -475,27 +530,7 @@ export async function fetchTrafficStatus(params: {
     if (!res.ok) throw new ApiError(`HTTP ${res.status} fetching traffic`, res.status);
     return await res.json();
   } catch {
-    return {
-      is_available: true,
-      total_incidents: 25,
-      area: params.area || 'Delhi AIIMS Ring Road',
-      incidents: [
-        {
-          id: 142,
-          incident_type: 'CONGESTION',
-          criticality: 'major',
-          road_name: 'Bhairon Marg -> Mahatma Gandhi Marg',
-          description: 'Queuing traffic',
-          latitude: 28.6121,
-          longitude: 77.2478,
-          delay_seconds: 605,
-          jam_factor: 8.5,
-          observed_at: '2026-10-09T13:35:00',
-        },
-      ],
-      source: 'TomTom Traffic API v5',
-      message: 'Retrieved active TomTom traffic incidents.',
-    };
+    return standaloneTraffic;
   }
 }
 
@@ -503,16 +538,7 @@ export async function fetchAssistantResponse(params: {
   query: string;
   area?: string;
 }): Promise<AssistantResponse> {
-  const query = new URLSearchParams();
-  query.set('query', params.query);
-  if (params.area) query.set('area', params.area);
-
-  const url = `${API_BASE_URL}/api/v1/intelligence/assistant?${query.toString()}`;
-  try {
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
-    if (!res.ok) throw new ApiError(`HTTP ${res.status} querying assistant`, res.status);
-    return await res.json();
-  } catch {
+  const getStandaloneAssistant = (): AssistantResponse => {
     const q = params.query.toLowerCase();
     const isTraffic = q.includes('traffic') || q.includes('road') || q.includes('jam') || q.includes('delay');
     const isWeather = q.includes('weather') || q.includes('rain') || q.includes('temp');
@@ -537,5 +563,22 @@ export async function fetchAssistantResponse(params: {
       confidence: 'HIGH (Multi-Source Verified)',
       timestamp: new Date().toISOString(),
     };
+  };
+
+  if (isHostedWebDemo) {
+    return getStandaloneAssistant();
+  }
+
+  const query = new URLSearchParams();
+  query.set('query', params.query);
+  if (params.area) query.set('area', params.area);
+
+  const url = `${API_BASE_URL}/api/v1/intelligence/assistant?${query.toString()}`;
+  try {
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!res.ok) throw new ApiError(`HTTP ${res.status} querying assistant`, res.status);
+    return await res.json();
+  } catch {
+    return getStandaloneAssistant();
   }
 }
