@@ -47,3 +47,5 @@ class RuleEvaluationResult(BaseModel):
     supporting_weather_id: Optional[int] = None
     supporting_traffic_id: Optional[int] = None
     supporting_notice_id: Optional[int] = None
+    supporting_aqi_id: Optional[int] = None
+

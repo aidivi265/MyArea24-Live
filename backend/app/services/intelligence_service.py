@@ -80,7 +80,17 @@ class IntelligenceService:
         if confidence:
             query = query.filter(IntelligenceInsight.confidence_level.ilike(f"%{confidence}%"))
         if is_active is not None:
-            query = query.filter(IntelligenceInsight.is_active == is_active)
+            now_utc = datetime.datetime.utcnow()
+            if is_active:
+                query = query.filter(
+                    IntelligenceInsight.is_active == True,
+                    IntelligenceInsight.expires_at > now_utc,
+                )
+            else:
+                query = query.filter(
+                    (IntelligenceInsight.is_active == False)
+                    | (IntelligenceInsight.expires_at <= now_utc)
+                )
 
         total = query.count()
         rows = (

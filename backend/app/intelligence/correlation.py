@@ -10,6 +10,7 @@ from backend.app.database.models import (
     WeatherObservation,
     TrafficObservation,
     GovernmentNotice,
+    AirQualityObservation,
     IntelligenceInsight,
     IntelligenceSignal,
 )
@@ -19,6 +20,8 @@ from backend.app.intelligence.rules import (
     evaluate_scenario_c_traffic_rule,
     evaluate_scenario_c_weather_rule,
     evaluate_scenario_d_rule,
+    evaluate_scenario_e_aqi_rule,
+    haversine_distance_km,
 )
 from backend.app.intelligence.schemas import IntelligenceInsightOutput, RuleEvaluationResult
 
@@ -133,6 +136,8 @@ class CorrelationEngine:
                 obs_table = "traffic_observations"
             elif sig.type == "alert":
                 obs_table = "government_notices"
+            elif sig.type == "air_quality":
+                obs_table = "air_quality_observations"
             else:
                 obs_table = "unknown"
 
@@ -160,11 +165,12 @@ class CorrelationEngine:
         run_scenario_a: bool = True,
         run_scenario_b: bool = True,
         run_scenario_c: bool = True,
+        run_scenario_e: bool = True,
     ) -> List[IntelligenceInsight]:
         """
         Executes complete multi-scenario intelligence pipeline across all active observation streams.
         Evaluates Scenario A (Weather + Traffic), Scenario B (Severe Public Alert),
-        and Scenario C (Single-Signal Notices).
+        Scenario C (Single-Signal Notices), and Scenario E (Air Quality Intelligence).
         """
         ref_time = reference_time_utc or datetime.datetime.utcnow()
         self.expire_stale_insights(ref_time)
@@ -200,8 +206,18 @@ class CorrelationEngine:
             .all()
         )
 
+        aqi_max_age = datetime.timedelta(minutes=settings.AQI_OBSERVATION_MAX_AGE_MINUTES)
+        min_aqi_time = ref_time - aqi_max_age
+        recent_aqi = (
+            self.db.query(AirQualityObservation)
+            .filter(AirQualityObservation.observed_at >= min_aqi_time)
+            .order_by(desc(AirQualityObservation.observed_at))
+            .all()
+        )
+
         correlated_weather_ids: Set[int] = set()
         correlated_traffic_ids: Set[int] = set()
+        correlated_aqi_ids: Set[int] = set()
 
         # ====================================================================
         # Stage 1: Scenario A — Weather + Traffic Cross-Signal Correlation
@@ -281,13 +297,27 @@ class CorrelationEngine:
         # ====================================================================
         if run_scenario_c:
             # C1: Standalone Critical Traffic
+            pilot_locations = settings.parsed_pilot_locations
             for t in recent_traffic:
                 if t.id in correlated_traffic_ids:
                     continue
 
+                nearest_loc = None
+                min_dist = float("inf")
+                for loc in pilot_locations:
+                    dist = haversine_distance_km(t.latitude, t.longitude, loc.lat, loc.lon)
+                    if dist < min_dist:
+                        min_dist = dist
+                        nearest_loc = loc
+
+                if nearest_loc and min_dist <= (settings.RULE_SPATIAL_RADIUS_KM + 3.0):
+                    loc_label = f"{t.road_name} ({nearest_loc.name})" if t.road_name else nearest_loc.name
+                else:
+                    loc_label = t.road_name or "Local Corridor"
+
                 res = evaluate_scenario_c_traffic_rule(
                     traffic=t,
-                    area_label=t.road_name or "Local Corridor",
+                    area_label=loc_label,
                     reference_time_utc=ref_time,
                     correlated_traffic_ids=correlated_traffic_ids,
                 )
@@ -343,5 +373,43 @@ class CorrelationEngine:
 
                     persisted = self._persist_insight(res.insight, dedup_hash, ref_time)
                     created_insights.append(persisted)
+
+        # ====================================================================
+        # Stage 4: Scenario E — Air Quality Intelligence (Severe / Very Poor AQI)
+        # ====================================================================
+        if run_scenario_e and recent_aqi:
+            pilot_locations = settings.parsed_pilot_locations
+            for aqi in recent_aqi:
+                for loc in pilot_locations:
+                    res = evaluate_scenario_e_aqi_rule(
+                        aqi_obs=aqi,
+                        area_label=loc.name,
+                        area_lat=loc.lat,
+                        area_lon=loc.lon,
+                        reference_time_utc=ref_time,
+                        correlated_aqi_ids=correlated_aqi_ids,
+                    )
+
+                    if res.matched and res.insight:
+                        dedup_hash = self.generate_dedup_hash(
+                            "air_quality_alert",
+                            loc.name,
+                            aqi.station_id,
+                            None,
+                            ref_time.date(),
+                        )
+
+                        existing = (
+                            self.db.query(IntelligenceInsight)
+                            .filter(IntelligenceInsight.dedup_hash == dedup_hash)
+                            .first()
+                        )
+                        if existing:
+                            correlated_aqi_ids.add(aqi.id)
+                            continue
+
+                        persisted = self._persist_insight(res.insight, dedup_hash, ref_time)
+                        created_insights.append(persisted)
+                        correlated_aqi_ids.add(aqi.id)
 
         return created_insights

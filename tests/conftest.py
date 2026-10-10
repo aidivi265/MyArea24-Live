@@ -108,7 +108,7 @@ def sample_sachet_rss_index():
       <title>Severe Thunderstorm warning for Delhi-NCR</title>
       <guid>1791552348353007</guid>
       <link>https://sachet.ndma.gov.in/cap_public_website/FetchXMLFile?identifier=1791552348353007</link>
-      <pubDate>Fri, 09 Oct 2026 13:25:51 GMT</pubDate>
+      <pubDate>Fri, 09 Oct 2030 13:25:51 GMT</pubDate>
       <author>IMD-New-Delhi</author>
       <category>Met</category>
     </item>
@@ -116,7 +116,7 @@ def sample_sachet_rss_index():
       <title>Moderate Rain with Lightning in Chennai</title>
       <guid>1791552348353008</guid>
       <link>https://sachet.ndma.gov.in/cap_public_website/FetchXMLFile?identifier=1791552348353008</link>
-      <pubDate>Fri, 09 Oct 2026 13:20:00 GMT</pubDate>
+      <pubDate>Fri, 09 Oct 2030 13:20:00 GMT</pubDate>
       <author>IMD-Chennai</author>
       <category>Met</category>
     </item>

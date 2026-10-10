@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from backend.app.core.config import settings
+from backend.app.core.errors import ProviderAuthError
 from backend.app.core.logging import logger
 from backend.app.database.models import (
     DataSource,
@@ -12,14 +13,17 @@ from backend.app.database.models import (
     WeatherObservation,
     TrafficObservation,
     GovernmentNotice,
+    AirQualityObservation,
 )
 from backend.app.integrations.weatherapi.client import WeatherAPIClient
 from backend.app.integrations.tomtom.client import TomTomTrafficClient
 from backend.app.integrations.here.client import HERETrafficClient
 from backend.app.integrations.sachet.client import SACHETClient
+from backend.app.integrations.openaq.client import OpenAQClient
 from backend.app.normalization.weather import NormalizedWeatherRecord
 from backend.app.normalization.traffic import NormalizedTrafficRecord
 from backend.app.normalization.alerts import NormalizedAlertRecord
+from backend.app.normalization.air_quality import NormalizedAQIRecord
 
 
 class IngestionWorker:
@@ -32,6 +36,7 @@ class IngestionWorker:
         weather_client: Optional[WeatherAPIClient] = None,
         traffic_client: Optional[Any] = None,
         sachet_client: Optional[SACHETClient] = None,
+        openaq_client: Optional[OpenAQClient] = None,
     ):
         self.weather_client = weather_client or WeatherAPIClient()
         if traffic_client is not None:
@@ -41,6 +46,7 @@ class IngestionWorker:
         else:
             self.traffic_client = HERETrafficClient()
         self.sachet_client = sachet_client or SACHETClient()
+        self.openaq_client = openaq_client or OpenAQClient()
 
     def ensure_data_sources(self, db: Session) -> None:
         """Initializes default DataSource records if missing."""
@@ -54,6 +60,7 @@ class IngestionWorker:
             ("weatherapi", "WeatherAPI.com", settings.WEATHERAPI_BASE_URL),
             (traffic_source_id, traffic_name, traffic_url),
             ("sachet_cap", "NDMA SACHET Disaster Alerts", settings.SACHET_FEED_URL),
+            ("openaq", "OpenAQ / CPCB CAAQMS Aggregation", settings.OPENAQ_BASE_URL),
         ]
         for src_id, name, url in sources:
             existing = db.query(DataSource).filter(DataSource.id == src_id).first()
@@ -310,6 +317,121 @@ class IngestionWorker:
         db.commit()
         return log
 
+    async def sync_air_quality(self, db: Session) -> DataSyncLog:
+        """
+        Polls OpenAQ v3 for CPCB/SPCB CAAQMS monitoring stations near pilot locations.
+        Calculates official CPCB NAQI and persists observations idempotently.
+        Gracefully handles unconfigured API key state without synthesizing data.
+        """
+        start_time = datetime.datetime.utcnow()
+        start_mono = time.monotonic()
+        fetched_count = 0
+        persisted_count = 0
+        rejected_count = 0
+        status = "SUCCESS"
+        error_msg = None
+
+        k = (self.openaq_client.api_key or "").strip().lower()
+        if not k or k in ("your_key", "your_key_here", "none", "null"):
+            logger.info("[worker] OPENAQ_API_KEY not configured. Air quality sync paused to protect data integrity.")
+            status = "AWAITING_CONFIG"
+            error_msg = "OPENAQ_API_KEY is not configured in environment. Ingestion suspended to prevent synthetic data."
+        else:
+            try:
+                locations = settings.parsed_pilot_locations
+                radius_m = int(settings.AQI_MAX_STATION_DISTANCE_KM * 1000)
+
+                for loc in locations:
+                    try:
+                        records = await self.openaq_client.fetch_latest_for_coordinates(
+                            loc.lat, loc.lon, radius_meters=radius_m
+                        )
+                        fetched_count += len(records)
+                        for rec in records:
+                            existing = db.query(AirQualityObservation).filter(
+                                AirQualityObservation.source_record_id == rec.source_record_id
+                            ).first()
+
+                            if existing:
+                                existing.aqi_value = rec.aqi_value
+                                existing.aqi_category = rec.aqi_category
+                                existing.prominent_pollutant = rec.prominent_pollutant
+                                existing.pm25 = rec.pm25
+                                existing.pm10 = rec.pm10
+                                existing.no2 = rec.no2
+                                existing.so2 = rec.so2
+                                existing.co = rec.co
+                                existing.o3 = rec.o3
+                                existing.observed_at = rec.observed_at
+                                existing.ingested_at = datetime.datetime.utcnow()
+                            else:
+                                obs = AirQualityObservation(
+                                    source_id=rec.source_id,
+                                    source_record_id=rec.source_record_id,
+                                    station_id=rec.station_id,
+                                    station_name=rec.station_name,
+                                    city=rec.city,
+                                    state=rec.state,
+                                    latitude=rec.latitude,
+                                    longitude=rec.longitude,
+                                    observed_at=rec.observed_at,
+                                    aqi_value=rec.aqi_value,
+                                    aqi_category=rec.aqi_category,
+                                    prominent_pollutant=rec.prominent_pollutant,
+                                    pm25=rec.pm25,
+                                    pm10=rec.pm10,
+                                    no2=rec.no2,
+                                    so2=rec.so2,
+                                    co=rec.co,
+                                    o3=rec.o3,
+                                    raw_data=rec.raw_data,
+                                )
+                                db.add(obs)
+                                persisted_count += 1
+                        db.commit()
+                    except ProviderAuthError as auth_err:
+                        logger.error(f"[worker] OpenAQ authentication failed for {loc.name}: {auth_err}")
+                        status = "AUTH_FAILED"
+                        error_msg = f"Provider authentication failed (HTTP {auth_err.status_code or 401}): Invalid credentials. Verify OPENAQ_API_KEY."
+                        db.rollback()
+                        break
+                    except Exception as loc_err:
+                        logger.error(f"[worker] Air quality sync error for {loc.name}: {loc_err}")
+                        rejected_count += 1
+                        db.rollback()
+
+            except Exception as e:
+                status = "FAILED"
+                error_msg = str(e)
+                logger.error(f"[worker] Air quality sync failed: {e}")
+                db.rollback()
+
+        duration_ms = int((time.monotonic() - start_mono) * 1000)
+        end_time = datetime.datetime.utcnow()
+
+        log = DataSyncLog(
+            source_id="openaq",
+            sync_started_at=start_time,
+            sync_ended_at=end_time,
+            duration_ms=duration_ms,
+            records_fetched=fetched_count,
+            records_persisted=persisted_count,
+            records_rejected=rejected_count,
+            status=status,
+            error_message=error_msg,
+        )
+        db.add(log)
+
+        src = db.query(DataSource).filter(DataSource.id == "openaq").first()
+        if src:
+            src.last_sync_at = end_time
+            src.last_status = status
+            if status == "FAILED":
+                src.error_count += 1
+
+        db.commit()
+        return log
+
     async def run_full_sync_cycle(self, db: Session) -> Dict[str, DataSyncLog]:
         """Runs a complete sync cycle across all sources."""
         self.ensure_data_sources(db)
@@ -317,4 +439,6 @@ class IngestionWorker:
         results["weather"] = await self.sync_weather(db)
         results["traffic"] = await self.sync_traffic(db)
         results["sachet"] = await self.sync_sachet(db)
+        results["air_quality"] = await self.sync_air_quality(db)
         return results
+

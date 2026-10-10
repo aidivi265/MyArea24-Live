@@ -61,6 +61,26 @@ class Settings(BaseSettings):
     SACHET_MAX_ITEMS_PER_POLL: int = 20
     SACHET_DETAIL_FETCH_TIMEOUT: float = 8.0
 
+    # Air Quality Provider Configuration (OpenAQ v3 / CPCB CAAQMS Aggregation)
+    OPENAQ_API_KEY: Optional[str] = None
+    OPENAQ_BASE_URL: str = "https://api.openaq.org/v3"
+    DATA_GOV_IN_API_KEY: Optional[str] = None
+    AQI_POLL_INTERVAL_MINUTES: int = 60
+    AQI_MAX_STATION_DISTANCE_KM: float = 15.0
+    AQI_OBSERVATION_MAX_AGE_MINUTES: int = 180
+
+    @field_validator("OPENAQ_API_KEY")
+    @classmethod
+    def clean_openaq_key(cls, v: Optional[str]) -> Optional[str]:
+        if not v:
+            return None
+        cleaned = v.strip().strip("'\"")
+        if "=" in cleaned:
+            cleaned = cleaned.split("=")[-1].strip().strip("'\"")
+        if cleaned.lower() in ("your_key", "your_openaq_api_key", "placeholder", "xxx", "none", "null", ""):
+            return None
+        return cleaned if cleaned else None
+
     # HTTP Client Controls
     HTTP_TIMEOUT_SECONDS: float = 10.0
     MAX_HTTP_RETRIES: int = 3

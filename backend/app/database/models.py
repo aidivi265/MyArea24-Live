@@ -133,6 +133,38 @@ class GovernmentNotice(Base):
     )
 
 
+class AirQualityObservation(Base):
+    __tablename__ = "air_quality_observations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    source_id = Column(String(50), ForeignKey("data_sources.id"), default="openaq", nullable=False)
+    source_record_id = Column(String(255), unique=True, nullable=False)  # deduplication key
+    station_id = Column(String(100), nullable=False)
+    station_name = Column(String(200), nullable=False)
+    city = Column(String(100), nullable=False)
+    state = Column(String(100), nullable=True)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    observed_at = Column(DateTime, nullable=False)
+    aqi_value = Column(Float, nullable=True)  # CPCB NAQI (0-500+)
+    aqi_category = Column(String(50), nullable=True)  # 'Good', 'Satisfactory', 'Moderate', 'Poor', 'Very Poor', 'Severe'
+    prominent_pollutant = Column(String(50), nullable=True)  # e.g. 'PM2.5', 'PM10'
+    pm25 = Column(Float, nullable=True)  # µg/m³
+    pm10 = Column(Float, nullable=True)  # µg/m³
+    no2 = Column(Float, nullable=True)  # µg/m³
+    so2 = Column(Float, nullable=True)  # µg/m³
+    co = Column(Float, nullable=True)  # mg/m³
+    o3 = Column(Float, nullable=True)  # µg/m³
+    raw_data = Column(JSON, nullable=True)
+    ingested_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_aqi_coords_observed", "latitude", "longitude", "observed_at"),
+        Index("ix_aqi_observed_at", "observed_at"),
+        Index("ix_aqi_station_observed", "station_id", "observed_at"),
+    )
+
+
 class IntelligenceInsight(Base):
     __tablename__ = "intelligence_insights"
 

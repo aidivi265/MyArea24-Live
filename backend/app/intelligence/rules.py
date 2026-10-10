@@ -3,7 +3,12 @@ import math
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from backend.app.core.config import settings
-from backend.app.database.models import WeatherObservation, TrafficObservation, GovernmentNotice
+from backend.app.database.models import (
+    WeatherObservation,
+    TrafficObservation,
+    GovernmentNotice,
+    AirQualityObservation,
+)
 from backend.app.intelligence.schemas import (
     AreaInfo,
     IntelligenceInsightOutput,
@@ -490,21 +495,49 @@ def evaluate_scenario_c_traffic_rule(
         )
 
     # 5. Build Grounded Single-Signal Insight
-    severity = "severe" if (delay_sec >= 2400 or crit == "critical") else "high"
+    severity = "severe" if (delay_sec >= 2400 or crit == "critical" or inc_type == "ROAD_CLOSURE") else "high"
     road = traffic.road_name or area_label
     delay_min = delay_sec // 60
 
-    headline = f"Traffic Advisory: Major Delay on {road}"
-    summary = (
-        f"Significant traffic delay (+{delay_min} mins, {traffic.incident_type}) reported along {road}. "
-        f"Observed via {traffic.source_id} traffic telemetry."
-    )
-    potential_impact = (
-        f"Commuters using this corridor face extended transit times. Bottlenecks expected around {road}."
-    )
-    recommendation = (
-        "Seek alternate routes or avoid this corridor until delays clear."
-    )
+    if inc_type == "ROAD_CLOSURE":
+        headline = f"Traffic Advisory: Road Closure on {road}"
+        summary = (
+            f"Road closure reported along {road}. "
+            f"Observed via {traffic.source_id} traffic telemetry."
+        )
+        potential_impact = (
+            f"Corridor is closed to vehicular traffic. Severe bottleneck and diversions expected around {road}."
+        )
+        recommendation = (
+            "Avoid this corridor. Use designated bypass routes or alternate arterial roads."
+        )
+        metric_summary = f"Criticality: {traffic.criticality or 'critical'} | Type: {traffic.incident_type} (Closed)"
+    elif delay_min > 0:
+        headline = f"Traffic Advisory: Major Delay on {road}"
+        summary = (
+            f"Significant traffic delay (+{delay_min} mins, {traffic.incident_type}) reported along {road}. "
+            f"Observed via {traffic.source_id} traffic telemetry."
+        )
+        potential_impact = (
+            f"Commuters using this corridor face extended transit times. Bottlenecks expected around {road}."
+        )
+        recommendation = (
+            "Seek alternate routes or avoid this corridor until delays clear."
+        )
+        metric_summary = f"Delay: +{delay_min} mins | Criticality: {traffic.criticality or 'N/A'} | Type: {traffic.incident_type}"
+    else:
+        headline = f"Traffic Advisory: Critical Incident on {road}"
+        summary = (
+            f"Critical traffic incident ({traffic.incident_type}) reported along {road}. "
+            f"Observed via {traffic.source_id} traffic telemetry."
+        )
+        potential_impact = (
+            f"Traffic disruptions expected around {road}."
+        )
+        recommendation = (
+            "Exercise caution and allow additional travel time."
+        )
+        metric_summary = f"Criticality: {traffic.criticality or 'N/A'} | Type: {traffic.incident_type}"
 
     signals = [
         SignalProvenance(
@@ -513,7 +546,7 @@ def evaluate_scenario_c_traffic_rule(
             observation_id=traffic.id,
             observed_at=traffic.observed_at,
             freshness_minutes=round(traffic_age_min, 1),
-            metric_summary=f"Delay: +{delay_min} mins | Criticality: {traffic.criticality or 'N/A'} | Type: {traffic.incident_type}",
+            metric_summary=metric_summary,
         )
     ]
 
@@ -659,3 +692,142 @@ def evaluate_scenario_c_weather_rule(
         insight=insight,
         supporting_weather_id=weather.id,
     )
+
+
+def evaluate_scenario_e_aqi_rule(
+    aqi_obs: AirQualityObservation,
+    area_label: str,
+    area_lat: float,
+    area_lon: float,
+    reference_time_utc: Optional[datetime.datetime] = None,
+    correlated_aqi_ids: Optional[Set[int]] = None,
+) -> RuleEvaluationResult:
+    """
+    Evaluates Scenario E: Air Quality Intelligence / Severe Pollution Advisory.
+    Triggers when an official CAAQMS monitoring station within maximum allowable distance
+    (default 15 km) records 'Very Poor' (AQI >= 301) or 'Severe' (AQI >= 401) pollution.
+    Respects strict data freshness limits (default 180 min) and ground-truth station provenance.
+    """
+    ref_time = reference_time_utc or datetime.datetime.utcnow()
+
+    # 1. Coordinate Validity
+    if not is_valid_coordinate(aqi_obs.latitude, aqi_obs.longitude):
+        return RuleEvaluationResult(matched=False, reason="Invalid or missing station geographic coordinates")
+    if not is_valid_coordinate(area_lat, area_lon):
+        return RuleEvaluationResult(matched=False, reason="Invalid or missing locality geographic coordinates")
+
+    # 2. Duplicate Correlation Check
+    if correlated_aqi_ids and aqi_obs.id in correlated_aqi_ids:
+        return RuleEvaluationResult(matched=False, reason="Air quality observation already correlated in this cycle")
+
+    # 3. Spatial Distance Check (Station must be within max allowable distance of locality)
+    dist_km = haversine_distance_km(aqi_obs.latitude, aqi_obs.longitude, area_lat, area_lon)
+    max_dist = settings.AQI_MAX_STATION_DISTANCE_KM
+    if dist_km > max_dist:
+        return RuleEvaluationResult(
+            matched=False,
+            reason=f"Station '{aqi_obs.station_name}' distance ({dist_km:.1f} km) exceeds max allowable radius ({max_dist:.1f} km)",
+        )
+
+    # 4. Freshness Check
+    max_age = settings.AQI_OBSERVATION_MAX_AGE_MINUTES
+    age_min = (ref_time - aqi_obs.observed_at).total_seconds() / 60.0
+    if age_min > max_age:
+        return RuleEvaluationResult(
+            matched=False,
+            reason=f"Stale air quality telemetry: age {age_min:.1f}m exceeds max {max_age}m",
+        )
+    if age_min < -15.0:
+        return RuleEvaluationResult(
+            matched=False,
+            reason=f"Future-dated observation timestamp: {age_min:.1f}m in the future",
+        )
+
+    # 5. AQI Severity Check (Only trigger for Very Poor >= 301 or Severe >= 401)
+    aqi_val = aqi_obs.aqi_value or 0.0
+    if aqi_val < 301.0:
+        return RuleEvaluationResult(
+            matched=False,
+            reason=f"Air quality ({aqi_val:.0f}, {aqi_obs.aqi_category or 'Moderate'}) is below advisory threshold (301)",
+        )
+
+    # 6. Compose Grounded Advisory Insight
+    is_severe = aqi_val >= 401.0
+    severity = "severe" if is_severe else "high"
+    pollutant = aqi_obs.prominent_pollutant or "PM2.5"
+
+    if is_severe:
+        headline = f"Severe Air Quality Alert: Hazardous Pollution in {area_label}"
+        potential_impact = (
+            f"Hazardous concentration of {pollutant} (AQI {int(aqi_val)}, Severe) poses critical respiratory risks "
+            f"to all healthy individuals and severe risks to sensitive populations. Triggers Emergency GRAP Stage IV protocol."
+        )
+        recommendation = (
+            "Avoid all non-essential outdoor movement and exercise. Keep doors and windows sealed and operate HEPA purifiers. "
+            "Children, elderly citizens, and respiratory patients should remain strictly indoors. Use certified N95 masks if transit is required."
+        )
+    else:
+        headline = f"Very Poor Air Quality Advisory in {area_label}"
+        potential_impact = (
+            f"Elevated {pollutant} levels (AQI {int(aqi_val)}, Very Poor) may cause respiratory illness and eye irritation "
+            f"upon prolonged outdoor exposure, especially for daily commuters and children."
+        )
+        recommendation = (
+            "Avoid intense outdoor physical activity during morning and late evening hours. "
+            "Wear N95/FFP2 masks during commute. Sensitive groups should minimize outdoor exposure."
+        )
+
+    summary = (
+        f"Continuous Ambient Air Quality Monitoring Station '{aqi_obs.station_name}' ({dist_km:.1f} km away in {aqi_obs.city}) "
+        f"recorded an official CPCB NAQI of {int(aqi_val)} ({aqi_obs.aqi_category}). "
+        f"Prominent pollutant: {pollutant}."
+    )
+
+    signals = [
+        SignalProvenance(
+            type="air_quality",
+            source=aqi_obs.source_id or "openaq",
+            observation_id=aqi_obs.id,
+            observed_at=aqi_obs.observed_at,
+            freshness_minutes=round(max(0.0, age_min), 1),
+            metric_summary=f"AQI {int(aqi_val)} ({aqi_obs.aqi_category}) · {pollutant} · Station: {aqi_obs.station_name} ({dist_km:.1f}km)",
+        )
+    ]
+
+    data_quality_notes = (
+        f"Verified telemetry from {aqi_obs.station_name} ({aqi_obs.city}, {aqi_obs.state or 'India'}). "
+        f"CPCB 2014 NAQI standard applied. Telemetry age: {age_min:.0f}m."
+    )
+
+    insight = IntelligenceInsightOutput(
+        insight_type="air_quality_alert",
+        area=AreaInfo(
+            label=area_label,
+            latitude=area_lat,
+            longitude=area_lon,
+            radius_km=settings.RULE_SPATIAL_RADIUS_KM,
+        ),
+        headline=headline,
+        summary=summary,
+        potential_impact=potential_impact,
+        recommendation=recommendation,
+        evidence_quality="supported",
+        composite_severity=severity,
+        confidence_level="HIGH (CPCB CAAQMS Station Telemetry)",
+        rule_identifier="SCENARIO_E_AIR_QUALITY_ADVISORY",
+        rule_version="1.0",
+        data_quality_notes=data_quality_notes,
+        observed_at=aqi_obs.observed_at,
+        created_at=ref_time,
+        expires_at=ref_time + datetime.timedelta(minutes=60),
+        next_review_at=ref_time + datetime.timedelta(minutes=20),
+        signals=signals,
+    )
+
+    return RuleEvaluationResult(
+        matched=True,
+        reason=f"Scenario E criteria satisfied: {aqi_obs.aqi_category} AQI ({int(aqi_val)}) at {aqi_obs.station_name}",
+        insight=insight,
+        supporting_aqi_id=aqi_obs.id,
+    )
+
