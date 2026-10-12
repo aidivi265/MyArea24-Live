@@ -115,8 +115,8 @@ export default function CommunitySignalsPage() {
         locality: selectedArea || 'Local Area',
         city: derivedCity,
         state: derivedState,
-        latitude: selectedLat || 28.5672,
-        longitude: selectedLon || 77.2100,
+        latitude: selectedLat ?? 28.6304,
+        longitude: selectedLon ?? 77.2177,
         severity,
       })
       setTitle('')

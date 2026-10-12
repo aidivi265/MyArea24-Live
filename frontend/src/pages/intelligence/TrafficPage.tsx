@@ -43,27 +43,9 @@ export default function TrafficPage() {
   const { t } = useTranslation()
   const { selectedArea, selectedLat, selectedLon, setLocation } = useLocationStore()
 
-  // Target location for traffic (defaults to global selected location)
-  const [activeLocation, setActiveLocation] = useState<{
-    area: string
-    lat: number | null
-    lon: number | null
-  }>({
-    area: selectedArea || 'Delhi Connaught Place',
-    lat: selectedLat ?? 28.6304,
-    lon: selectedLon ?? 77.2177,
-  })
-
-  // Sync if global store location changes and user hasn't explicitly selected another
-  useEffect(() => {
-    if (selectedArea) {
-      setActiveLocation({
-        area: selectedArea,
-        lat: selectedLat ?? null,
-        lon: selectedLon ?? null,
-      })
-    }
-  }, [selectedArea, selectedLat, selectedLon])
+  const currentArea = selectedArea || 'Delhi Connaught Place'
+  const currentLat = selectedLat ?? 28.6304
+  const currentLon = selectedLon ?? 77.2177
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('')
@@ -96,50 +78,53 @@ export default function TrafficPage() {
     return () => clearTimeout(timer)
   }, [searchQuery])
 
-  // Traffic query using active target coordinates & area
+  // Traffic query using active target coordinates & area (refetches on global location change)
   const { data, isLoading, refetch, isRefetching } = useQuery({
-    queryKey: ['traffic-full', activeLocation.area, activeLocation.lat, activeLocation.lon],
+    queryKey: ['traffic-full', currentArea, currentLat, currentLon],
     queryFn: () =>
       intelligenceApi.traffic({
-        area: activeLocation.area,
-        lat: activeLocation.lat ?? undefined,
-        lon: activeLocation.lon ?? undefined,
+        area: currentArea,
+        lat: currentLat,
+        lon: currentLon,
         limit: 50,
       }),
     staleTime: 2 * 60 * 1000,
   })
 
   function handleSelectResult(r: LocationResult) {
-    const lat = r.latitude ?? r.lat ?? null
-    const lon = r.longitude ?? r.lon ?? null
+    const lat = r.latitude ?? r.lat ?? 28.6304
+    const lon = r.longitude ?? r.lon ?? 77.2177
     const label = r.display_label || `${r.name}, ${r.district || ''}, ${r.state || ''}`
-    setActiveLocation({ area: label, lat, lon })
+    localStorage.setItem('ma24_location_manually_set', 'true')
+    setLocation(label, lat, lon, {
+      city: r.district || r.name.split(',')[0].trim(),
+      state: r.state,
+      district: r.district,
+    })
     setSearchQuery('')
     setShowDropdown(false)
   }
 
   function handleSelectCorridor(hub: { name: string; lat: number; lon: number }) {
-    setActiveLocation({ area: hub.name, lat: hub.lat, lon: hub.lon })
-  }
-
-  function handleResetToMyLocation() {
-    setActiveLocation({
-      area: selectedArea || 'Delhi Connaught Place',
-      lat: selectedLat ?? 28.6304,
-      lon: selectedLon ?? 77.2177,
+    localStorage.setItem('ma24_location_manually_set', 'true')
+    setLocation(hub.name, hub.lat, hub.lon, {
+      city: hub.name.split(' ')[0],
     })
   }
 
-  function handleSetAsGlobalLocation() {
-    if (activeLocation.lat !== null && activeLocation.lon !== null) {
-      setLocation(activeLocation.area, activeLocation.lat, activeLocation.lon)
+  function handleResetToMyLocation() {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          localStorage.setItem('ma24_location_manually_set', 'true')
+          setLocation('My Location (GPS)', pos.coords.latitude, pos.coords.longitude)
+        },
+        () => {
+          setLocation('Delhi Connaught Place', 28.6304, 77.2177, { city: 'Delhi', state: 'Delhi NCR' })
+        }
+      )
     }
   }
-
-  const isCurrentGlobal =
-    activeLocation.area === selectedArea &&
-    activeLocation.lat === selectedLat &&
-    activeLocation.lon === selectedLon
 
   // Filter & sort incidents
   const allIncidents = data?.incidents ?? []
@@ -184,8 +169,8 @@ export default function TrafficPage() {
   return (
     <>
       <SEOMeta
-        title={`Live Traffic & Incidents — ${activeLocation.area}`}
-        description={`Real-time TomTom traffic congestion, delays, accidents and arterial road conditions near ${activeLocation.area}`}
+        title={`Live Traffic & Incidents — ${currentArea}`}
+        description={`Real-time TomTom traffic congestion, delays, accidents and arterial road conditions near ${currentArea}`}
       />
 
       <div className="max-w-3xl mx-auto space-y-6">
@@ -212,15 +197,14 @@ export default function TrafficPage() {
                 <RefreshCw className={`h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />
               </button>
 
-              {!isCurrentGlobal && (
-                <button
-                  onClick={handleResetToMyLocation}
-                  className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-brand-50 text-brand-700 hover:bg-brand-100 transition-colors flex items-center gap-1.5"
-                >
-                  <LocateFixed className="h-3.5 w-3.5" />
-                  My Location
-                </button>
-              )}
+              <button
+                onClick={handleResetToMyLocation}
+                className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-brand-50 text-brand-700 hover:bg-brand-100 transition-colors flex items-center gap-1.5"
+                title="Auto-detect current GPS location"
+              >
+                <LocateFixed className="h-3.5 w-3.5" />
+                Locate Me (GPS)
+              </button>
             </div>
           </div>
 
@@ -282,7 +266,7 @@ export default function TrafficPage() {
             </p>
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
               {POPULAR_CORRIDORS.map((c) => {
-                const isActive = activeLocation.area.toLowerCase().includes(c.name.toLowerCase().split(' ')[0])
+                const isActive = currentArea.toLowerCase().includes(c.name.toLowerCase().split(' ')[0])
                 return (
                   <button
                     key={c.name}
@@ -305,16 +289,11 @@ export default function TrafficPage() {
           <div className="flex items-center justify-between pt-2 border-t border-gray-100 text-xs text-gray-500">
             <span className="flex items-center gap-1.5">
               <MapPin className="h-3.5 w-3.5 text-orange-500" />
-              Showing traffic for: <strong className="text-gray-800">{activeLocation.area}</strong>
+              Showing traffic for: <strong className="text-gray-800">{currentArea}</strong>
             </span>
-            {!isCurrentGlobal && (
-              <button
-                onClick={handleSetAsGlobalLocation}
-                className="text-brand-600 hover:text-brand-700 font-semibold text-[11px] hover:underline"
-              >
-                Set as my active location
-              </button>
-            )}
+            <span className="text-[11px] font-bold px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200">
+              Unified App Location
+            </span>
           </div>
         </div>
 
@@ -418,7 +397,7 @@ export default function TrafficPage() {
             {filteredIncidents.length === 0 ? (
               <EmptyState
                 title="Roads are clear in this vicinity"
-                description={`No active incidents or vehicular bottlenecks detected near ${activeLocation.area}.`}
+                description={`No active incidents or vehicular bottlenecks detected near ${currentArea}.`}
               />
             ) : (
               <div className="space-y-3">

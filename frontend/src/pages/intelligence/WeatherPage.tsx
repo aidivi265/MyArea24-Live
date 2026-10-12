@@ -48,37 +48,15 @@ export default function WeatherPage() {
   const { t } = useTranslation()
   const { selectedArea, selectedLat, selectedLon, setLocation } = useLocationStore()
 
-  // Active weather target: defaults to user's selected location, or changes to custom searched location
-  const [activeLocation, setActiveLocation] = useState<{
-    name: string
-    lat?: number
-    lon?: number
-    isCustom: boolean
-  }>({
-    name: selectedArea || 'Delhi Connaught Place',
-    lat: selectedLat ?? 28.6304,
-    lon: selectedLon ?? 77.2177,
-    isCustom: false,
-  })
+  const currentArea = selectedArea || 'Delhi Connaught Place'
+  const currentLat = selectedLat ?? 28.6304
+  const currentLon = selectedLon ?? 77.2177
 
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<LocationResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const [showDropdown, setShowDropdown] = useState(false)
-  const [appliedAlert, setAppliedAlert] = useState(false)
   const searchContainerRef = useRef<HTMLDivElement>(null)
-
-  // Sync with global store when user changes location outside WeatherPage, unless user explicitly locked a custom location
-  useEffect(() => {
-    if (!activeLocation.isCustom && selectedArea) {
-      setActiveLocation({
-        name: selectedArea,
-        lat: selectedLat ?? undefined,
-        lon: selectedLon ?? undefined,
-        isCustom: false,
-      })
-    }
-  }, [selectedArea, selectedLat, selectedLon, activeLocation.isCustom])
 
   // Debounced locality search across all 780+ Indian districts and corridors
   useEffect(() => {
@@ -114,26 +92,27 @@ export default function WeatherPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Weather query using current target (refetches on location change)
+  // Weather query using current target (refetches on global location change)
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['weather-full', activeLocation.name, activeLocation.lat, activeLocation.lon],
+    queryKey: ['weather-full', currentArea, currentLat, currentLon],
     queryFn: () =>
       intelligenceApi.weather({
-        area: activeLocation.name || undefined,
-        lat: activeLocation.lat,
-        lon: activeLocation.lon,
+        area: currentArea || undefined,
+        lat: currentLat,
+        lon: currentLon,
       }),
     staleTime: 3 * 60 * 1000,
   })
 
-  // Pick a location from suggestions
+  // Pick a location from suggestions or chips — updates global store for all tabs
   function handleSelectLocation(loc: { name: string; lat?: number; lon?: number; district?: string }) {
     const displayName = loc.district ? `${loc.name}, ${loc.district}` : loc.name
-    setActiveLocation({
-      name: displayName,
-      lat: loc.lat,
-      lon: loc.lon,
-      isCustom: true,
+    const lat = loc.lat ?? 28.6304
+    const lon = loc.lon ?? 77.2177
+    localStorage.setItem('ma24_location_manually_set', 'true')
+    setLocation(displayName, lat, lon, {
+      city: loc.district || loc.name.split(',')[0].trim(),
+      district: loc.district,
     })
     setSearchQuery('')
     setShowDropdown(false)
@@ -153,40 +132,28 @@ export default function WeatherPage() {
         lon: first.longitude,
       })
     } else {
-      setActiveLocation({
-        name: searchQuery.trim(),
-        lat: undefined,
-        lon: undefined,
-        isCustom: true,
+      localStorage.setItem('ma24_location_manually_set', 'true')
+      setLocation(searchQuery.trim(), currentLat, currentLon, {
+        city: searchQuery.trim(),
       })
       setShowDropdown(false)
     }
   }
 
-  // Reset to user's globally selected location
+  // Reset to GPS location
   function handleResetToMyLocation() {
-    setActiveLocation({
-      name: selectedArea || 'Delhi Connaught Place',
-      lat: selectedLat ?? 28.6304,
-      lon: selectedLon ?? 77.2177,
-      isCustom: false,
-    })
-    setSearchQuery('')
-  }
-
-  // Set this custom location as the app's global location
-  function handleSetAsGlobalLocation() {
-    if (activeLocation.lat && activeLocation.lon) {
-      setLocation(
-        activeLocation.name,
-        activeLocation.lat,
-        activeLocation.lon,
-        activeLocation.name.split(',')[0].trim()
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          localStorage.setItem('ma24_location_manually_set', 'true')
+          setLocation('My Location (GPS)', pos.coords.latitude, pos.coords.longitude)
+        },
+        () => {
+          setLocation('Delhi Connaught Place', 28.6304, 77.2177, { city: 'Delhi', state: 'Delhi NCR' })
+        }
       )
-      setActiveLocation(l => ({ ...l, isCustom: false }))
-      setAppliedAlert(true)
-      setTimeout(() => setAppliedAlert(false), 2500)
     }
+    setSearchQuery('')
   }
 
   const isRain = data?.condition_text?.toLowerCase().includes('rain') || (data?.precipitation_mm ?? 0) > 0
@@ -195,8 +162,8 @@ export default function WeatherPage() {
   return (
     <>
       <SEOMeta
-        title={`Live Weather — ${activeLocation.name}`}
-        description={`Real-time temperature, precipitation, humidity, and commute weather advisories for ${activeLocation.name}, India.`}
+        title={`Live Weather — ${currentArea}`}
+        description={`Real-time temperature, precipitation, humidity, and commute weather advisories for ${currentArea}, India.`}
       />
 
       <div className="max-w-2xl mx-auto space-y-6">
@@ -209,53 +176,23 @@ export default function WeatherPage() {
             </h1>
             <p className="text-sm text-gray-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
               <MapPin className="h-3.5 w-3.5 text-brand-500 shrink-0" />
-              <span className="font-semibold text-gray-800">{activeLocation.name}</span>
-              {activeLocation.isCustom ? (
-                <span className="text-[11px] font-bold px-2 py-0.5 bg-amber-50 text-amber-700 rounded-full border border-amber-200">
-                  Custom Location
-                </span>
-              ) : (
-                <span className="text-[11px] font-bold px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200">
-                  Your Active Area
-                </span>
-              )}
+              <span className="font-semibold text-gray-800">{currentArea}</span>
+              <span className="text-[11px] font-bold px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200">
+                Unified App Location
+              </span>
             </p>
           </div>
 
           {/* Quick Context Controls */}
           <div className="flex items-center gap-2">
-            {activeLocation.isCustom && (
-              <>
-                <button
-                  onClick={handleResetToMyLocation}
-                  className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 font-semibold transition"
-                  title="Switch back to your default app location"
-                >
-                  <RotateCcw className="h-3.5 w-3.5 text-gray-400" />
-                  My Location
-                </button>
-
-                {activeLocation.lat && activeLocation.lon && (
-                  <button
-                    onClick={handleSetAsGlobalLocation}
-                    className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-semibold transition shadow-sm"
-                    title="Make this your primary location across MyArea24"
-                  >
-                    {appliedAlert ? (
-                      <>
-                        <Check className="h-3.5 w-3.5" />
-                        Set as Active!
-                      </>
-                    ) : (
-                      <>
-                        <Compass className="h-3.5 w-3.5" />
-                        Set Everywhere
-                      </>
-                    )}
-                  </button>
-                )}
-              </>
-            )}
+            <button
+              onClick={handleResetToMyLocation}
+              className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 font-semibold transition"
+              title="Auto-detect current GPS location"
+            >
+              <RotateCcw className="h-3.5 w-3.5 text-gray-400" />
+              Locate Me (GPS)
+            </button>
           </div>
         </div>
 
@@ -333,7 +270,7 @@ export default function WeatherPage() {
           <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">Quick Select Major Hubs:</p>
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
             {POPULAR_LOCATIONS.map((loc) => {
-              const isCurrent = activeLocation.name.toLowerCase().includes(loc.label.toLowerCase())
+              const isCurrent = currentArea.toLowerCase().includes(loc.label.toLowerCase())
               return (
                 <button
                   key={loc.label}
@@ -370,7 +307,7 @@ export default function WeatherPage() {
           <UnavailableState
             message={
               data?.message ||
-              `Weather data currently unavailable for ${activeLocation.name}. Try picking a nearby district or select from quick hubs above.`
+              `Weather data currently unavailable for ${currentArea}. Try picking a nearby district or select from quick hubs above.`
             }
           />
         ) : (
@@ -390,7 +327,7 @@ export default function WeatherPage() {
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-xs uppercase font-bold tracking-wider text-blue-200 bg-white/10 px-2.5 py-0.5 rounded-full">
-                      {data.location_name || activeLocation.name}
+                      {data.location_name || currentArea}
                     </span>
                   </div>
 

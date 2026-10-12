@@ -243,10 +243,10 @@ export function LocalitySelector() {
         </button>
       </div>
 
-      {/* Mobile Backdrop */}
+      {/* Backdrop (Mobile + Desktop dismiss) */}
       {open && (
         <div
-          className="fixed inset-0 bg-black/40 z-40 sm:hidden"
+          className="fixed inset-0 bg-black/25 z-40"
           onClick={() => setOpen(false)}
         />
       )}
@@ -259,7 +259,7 @@ export function LocalitySelector() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.98 }}
             transition={{ duration: 0.16 }}
-            className="fixed inset-x-2.5 top-16 sm:absolute sm:inset-x-auto sm:top-full sm:left-auto sm:right-0 mt-2 sm:w-[440px] md:w-[480px] bg-white border border-gray-200/90 rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-[85vh]"
+            className="fixed inset-x-2.5 top-16 sm:absolute sm:inset-x-auto sm:top-full sm:left-0 sm:right-auto mt-2 w-[calc(100vw-1.25rem)] sm:w-[460px] md:w-[490px] max-w-[calc(100vw-2rem)] bg-white border border-gray-200/90 rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-[85vh]"
           >
             {/* Header: Exact Tracked Address Overview */}
             <div className="p-3.5 bg-gradient-to-r from-brand-900 via-brand-800 to-indigo-900 text-white border-b border-brand-700/50">

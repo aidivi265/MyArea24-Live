@@ -94,27 +94,9 @@ function getHealthAdvisory(aqi?: number) {
 export default function AirQualityPage() {
   const { selectedArea, selectedLat, selectedLon, setLocation } = useLocationStore()
 
-  // Target location for AQI lookup (defaults to global store)
-  const [activeLocation, setActiveLocation] = useState<{
-    area: string
-    lat: number | null
-    lon: number | null
-  }>({
-    area: selectedArea || 'Delhi Connaught Place',
-    lat: selectedLat ?? 28.6304,
-    lon: selectedLon ?? 77.2177,
-  })
-
-  // Sync if store location changes and user hasn't explicitly searched
-  useEffect(() => {
-    if (selectedArea) {
-      setActiveLocation({
-        area: selectedArea,
-        lat: selectedLat ?? null,
-        lon: selectedLon ?? null,
-      })
-    }
-  }, [selectedArea, selectedLat, selectedLon])
+  const currentArea = selectedArea || 'Delhi Connaught Place'
+  const currentLat = selectedLat ?? 28.6304
+  const currentLon = selectedLon ?? 77.2177
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('')
@@ -142,48 +124,51 @@ export default function AirQualityPage() {
     return () => clearTimeout(timer)
   }, [searchQuery])
 
-  // AQI Query
+  // AQI Query (refetches on global location change)
   const { data, isLoading, refetch, isRefetching } = useQuery({
-    queryKey: ['aqi-full', activeLocation.area, activeLocation.lat, activeLocation.lon],
+    queryKey: ['aqi-full', currentArea, currentLat, currentLon],
     queryFn: () => intelligenceApi.airQuality({
-      area: activeLocation.area,
-      lat: activeLocation.lat ?? undefined,
-      lon: activeLocation.lon ?? undefined,
+      area: currentArea,
+      lat: currentLat,
+      lon: currentLon,
     }),
     staleTime: 3 * 60 * 1000,
   })
 
   function handleSelectResult(r: LocationResult) {
-    const lat = r.latitude ?? r.lat ?? null
-    const lon = r.longitude ?? r.lon ?? null
+    const lat = r.latitude ?? r.lat ?? 28.6304
+    const lon = r.longitude ?? r.lon ?? 77.2177
     const label = r.display_label || `${r.name}, ${r.district || ''}, ${r.state || ''}`
-    setActiveLocation({ area: label, lat, lon })
+    localStorage.setItem('ma24_location_manually_set', 'true')
+    setLocation(label, lat, lon, {
+      city: r.district || r.name.split(',')[0].trim(),
+      state: r.state,
+      district: r.district,
+    })
     setSearchQuery('')
     setShowDropdown(false)
   }
 
   function handleSelectHub(hub: { name: string; lat: number; lon: number }) {
-    setActiveLocation({ area: hub.name, lat: hub.lat, lon: hub.lon })
-  }
-
-  function handleResetToMyLocation() {
-    setActiveLocation({
-      area: selectedArea || 'Delhi Connaught Place',
-      lat: selectedLat ?? 28.6304,
-      lon: selectedLon ?? 77.2177,
+    localStorage.setItem('ma24_location_manually_set', 'true')
+    setLocation(hub.name, hub.lat, hub.lon, {
+      city: hub.name.split(' ')[0],
     })
   }
 
-  function handleSetAsGlobalLocation() {
-    if (activeLocation.lat !== null && activeLocation.lon !== null) {
-      setLocation(activeLocation.area, activeLocation.lat, activeLocation.lon)
+  function handleResetToMyLocation() {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          localStorage.setItem('ma24_location_manually_set', 'true')
+          setLocation('My Location (GPS)', pos.coords.latitude, pos.coords.longitude)
+        },
+        () => {
+          setLocation('Delhi Connaught Place', 28.6304, 77.2177, { city: 'Delhi', state: 'Delhi NCR' })
+        }
+      )
     }
   }
-
-  const isCurrentGlobal =
-    activeLocation.area === selectedArea &&
-    activeLocation.lat === selectedLat &&
-    activeLocation.lon === selectedLon
 
   const isAvailable = Boolean(data?.is_available || (data?.aqi_value !== undefined && data?.aqi_value !== null))
   const advisory = getHealthAdvisory(data?.aqi_value)
@@ -192,8 +177,8 @@ export default function AirQualityPage() {
   return (
     <>
       <SEOMeta
-        title={`Air Quality (AQI) — ${activeLocation.area}`}
-        description={`Real-time Central Pollution Control Board (CPCB) NAQI and pollutant breakdown for ${activeLocation.area}`}
+        title={`Air Quality (AQI) — ${currentArea}`}
+        description={`Real-time Central Pollution Control Board (CPCB) NAQI and pollutant breakdown for ${currentArea}`}
       />
 
       <div className="max-w-2xl mx-auto space-y-5">
@@ -220,15 +205,14 @@ export default function AirQualityPage() {
                 <RefreshCw className={`h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />
               </button>
 
-              {!isCurrentGlobal && (
-                <button
-                  onClick={handleResetToMyLocation}
-                  className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-brand-50 text-brand-700 hover:bg-brand-100 transition-colors flex items-center gap-1.5"
-                >
-                  <LocateFixed className="h-3.5 w-3.5" />
-                  My Location
-                </button>
-              )}
+              <button
+                onClick={handleResetToMyLocation}
+                className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-brand-50 text-brand-700 hover:bg-brand-100 transition-colors flex items-center gap-1.5"
+                title="Auto-detect current GPS location"
+              >
+                <LocateFixed className="h-3.5 w-3.5" />
+                Locate Me (GPS)
+              </button>
             </div>
           </div>
 
@@ -286,7 +270,7 @@ export default function AirQualityPage() {
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
             <span className="text-gray-400 font-medium whitespace-nowrap text-[11px] mr-1">Major Hubs:</span>
             {POPULAR_HUBS.map(hub => {
-              const active = activeLocation.area.toLowerCase().includes(hub.name.toLowerCase())
+              const active = currentArea.toLowerCase().includes(hub.name.toLowerCase())
               return (
                 <button
                   key={hub.name}
@@ -308,17 +292,12 @@ export default function AirQualityPage() {
             <div className="flex items-center gap-1.5 text-gray-600 truncate min-w-0">
               <MapPin className="h-3.5 w-3.5 text-emerald-600 flex-shrink-0" />
               <span className="font-semibold text-gray-800">Showing AQI for:</span>
-              <span className="truncate text-gray-600 font-medium">{activeLocation.area}</span>
+              <span className="truncate text-gray-600 font-medium">{currentArea}</span>
             </div>
 
-            {!isCurrentGlobal && (
-              <button
-                onClick={handleSetAsGlobalLocation}
-                className="text-brand-600 hover:text-brand-700 font-semibold whitespace-nowrap ml-2 hover:underline"
-              >
-                Set Everywhere
-              </button>
-            )}
+            <span className="text-[11px] font-bold px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200">
+              Unified App Location
+            </span>
           </div>
         </div>
 
@@ -344,7 +323,7 @@ export default function AirQualityPage() {
                 </div>
 
                 <p className="text-sm text-gray-600 mt-1 font-medium">
-                  {data?.station_name || data?.city || activeLocation.area}
+                  {data?.station_name || data?.city || currentArea}
                 </p>
 
                 {data?.prominent_pollutant && (

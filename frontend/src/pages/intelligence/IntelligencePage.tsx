@@ -77,8 +77,8 @@ export default function IntelligencePage() {
   const [page, setPage] = useState(1)
   const [saathiInput, setSaathiInput] = useState('')
 
-  const lat = selectedLat ?? 28.6692
-  const lon = selectedLon ?? 77.4538
+  const lat = selectedLat ?? 28.6304
+  const lon = selectedLon ?? 77.2177
 
   // ─── Parallel Telemetry Queries ──────────────────────────────────────────────
   const { data: weatherData, isLoading: weatherLoading, refetch: refetchWeather } = useQuery({

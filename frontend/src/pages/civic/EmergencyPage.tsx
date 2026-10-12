@@ -26,7 +26,7 @@ import { motion } from 'framer-motion'
 
 export default function EmergencyPage() {
   const { t } = useTranslation()
-  const { selectedArea, selectedLat, selectedLon } = useLocationStore()
+  const { selectedArea, selectedLat, selectedLon, setLocation } = useLocationStore()
   const [gpsLoading, setGpsLoading] = useState(false)
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lon: number } | null>(null)
   const [isCrisisMode, setIsCrisisMode] = useState(false)
@@ -61,7 +61,12 @@ export default function EmergencyPage() {
   function locateMe() {
     setGpsLoading(true)
     navigator.geolocation.getCurrentPosition(
-      pos => { setGpsCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude }); setGpsLoading(false) },
+      pos => {
+        setGpsCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude })
+        localStorage.setItem('ma24_location_manually_set', 'true')
+        setLocation('My Location (GPS)', pos.coords.latitude, pos.coords.longitude)
+        setGpsLoading(false)
+      },
       () => setGpsLoading(false),
       { enableHighAccuracy: true, timeout: 8000 }
     )

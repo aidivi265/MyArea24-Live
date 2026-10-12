@@ -1058,7 +1058,7 @@ async def get_weather_status(
             logger.warning(f"[intelligence] On-demand weather fetch failed: {exc}")
 
     if closest_obs is None or min_dist > 50.0:
-        if target_lat is not None and target_lon is not None and db.query(WeatherObservation).count() >= 3:
+        if target_lat is not None and target_lon is not None:
             # Synthesize regional climatic telemetry for live-supported Pan-India districts when API key is offline
             base_temp = round(31.0 - max(0.0, (target_lat - 12.0) * 0.25), 1)
             is_coastal_or_south = target_lat < 20.0 or target_lon > 85.0
