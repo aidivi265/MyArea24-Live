@@ -28,7 +28,8 @@ async def run_single_cycle():
         logger.info(
             f"Ingestion results -> Weather: {results['weather'].status} ({results['weather'].records_persisted} new), "
             f"Traffic: {results['traffic'].status} ({results['traffic'].records_persisted} new), "
-            f"SACHET: {results['sachet'].status} ({results['sachet'].records_persisted} new)"
+            f"SACHET: {results['sachet'].status} ({results['sachet'].records_persisted} new), "
+            f"AQI: {results['air_quality'].status} ({results['air_quality'].records_persisted} new)"
         )
 
         corr = CorrelationEngine(db)

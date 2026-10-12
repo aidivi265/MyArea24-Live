@@ -123,16 +123,16 @@ async def test_openaq_client_success_and_caching():
     with patch.object(client, "_get", new_callable=AsyncMock) as mock_get:
         mock_get.return_value = mock_response
 
-        # First call: makes network request
+        # First call: makes network requests (1 for locations list + 1 for station telemetry enrichment)
         records1 = await client.fetch_latest_for_coordinates(28.6508, 77.3152)
         assert len(records1) == 1
         assert records1[0].station_id == "8118"
-        assert mock_get.call_count == 1
+        assert mock_get.call_count == 2
 
         # Second call with same coordinates: hits in-memory cache
         records2 = await client.fetch_latest_for_coordinates(28.6508, 77.3152)
         assert len(records2) == 1
-        assert mock_get.call_count == 1  # Cache HIT, no new request
+        assert mock_get.call_count == 2  # Cache HIT, no new request
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,31 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: myarea24-backend
+    restart: always
+    environment:
+      - APP_ENV=production
+      - OTP_DEV_MODE=true
+      - JWT_SECRET_KEY=myarea24_production_secure_secret_key_pan_india_2026
+      - DATABASE_URL=sqlite:////app/data/myarea24.db
+      - INGESTION_ENABLED=false
+    volumes:
+      - myarea24-data:/app/data
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: myarea24-frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  myarea24-data:

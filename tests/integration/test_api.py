@@ -278,7 +278,12 @@ def test_air_quality_endpoint_awaiting_config(client):
     assert res.status_code == 200
     data = res.json()
     assert data["status"] in ("AWAITING_CONFIG", "UNAVAILABLE")
-    assert "Strict data integrity" in data["message"] or "protect data integrity" in data["message"] or "not configured" in data["message"]
+    assert (
+        "Strict data integrity" in data["message"]
+        or "protect data integrity" in data["message"]
+        or "not configured" in data["message"]
+        or "No air quality monitoring stations" in data["message"]
+    )
 
 
 def test_air_quality_endpoint_with_active_station(client, db_session):
@@ -495,3 +500,269 @@ def test_assistant_endpoint_pilot_and_expansion(client, db_session):
     assert "unmonitored" in data_exp["response_text"].lower()
 
 
+def test_merchant_business_hours_and_product_price_updates(client, db_session):
+    from backend.app.database.models import Business, Product, User
+    from backend.app.core.security import create_access_token
+
+    merchant = User(
+        email="sharma.electronics@test.in",
+        full_name="Rajesh Sharma",
+        role="merchant",
+        is_active=True,
+        is_verified=True,
+    )
+    db_session.add(merchant)
+    db_session.commit()
+    db_session.refresh(merchant)
+
+    token = create_access_token({"sub": str(merchant.id), "role": merchant.role})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    biz = Business(
+        owner_id=merchant.id,
+        name="Sharma Electronics",
+        slug="sharma-electronics-test",
+        category="Electronics",
+        address="Shop 12, Connaught Place",
+        locality="Connaught Place",
+        city="Delhi",
+        state="Delhi",
+        latitude=28.6304,
+        longitude=77.2177,
+        phone="9876543210",
+        opening_time="09:00",
+        closing_time="21:00",
+        days_open="Mon-Sat",
+        status="active",
+        is_verified=True,
+    )
+    db_session.add(biz)
+    db_session.commit()
+    db_session.refresh(biz)
+
+    # 1. Verify merchant dashboard analytics returns full business hours & contact fields
+    dash_res = client.get(f"/api/v1/enquiries/merchant/{biz.id}", headers=headers)
+    assert dash_res.status_code == 200
+    dash_data = dash_res.json()
+    assert dash_data["business"]["opening_time"] == "09:00"
+    assert dash_data["business"]["closing_time"] == "21:00"
+    assert dash_data["business"]["phone"] == "9876543210"
+    assert dash_data["business"]["locality"] == "Connaught Place"
+
+    # 2. Update business operating hours, phone, whatsapp, and address via PUT /api/v1/businesses/{id}
+    upd_biz_res = client.put(
+        f"/api/v1/businesses/{biz.id}",
+        headers=headers,
+        json={
+            "opening_time": "08:30",
+            "closing_time": "22:30",
+            "days_open": "Mon-Sun",
+            "phone": "9988776655",
+            "whatsapp": "9988776655",
+            "address": "Shop 12-B, Inner Circle, Connaught Place",
+        },
+    )
+    assert upd_biz_res.status_code == 200
+    upd_biz_data = upd_biz_res.json()
+    assert upd_biz_data["success"] is True
+    assert upd_biz_data["business"]["opening_time"] == "08:30"
+    assert upd_biz_data["business"]["closing_time"] == "22:30"
+    assert upd_biz_data["business"]["days_open"] == "Mon-Sun"
+    assert upd_biz_data["business"]["phone"] == "9988776655"
+    assert upd_biz_data["business"]["whatsapp"] == "9988776655"
+
+    # 3. Create a product and update its local_price and mrp via PUT /api/v1/products/{id}
+    prod = Product(
+        business_id=biz.id,
+        name="Havells Ceiling Fan",
+        category="Electronics",
+        local_price=2400.0,
+        mrp=2800.0,
+        availability_status="in_stock",
+    )
+    db_session.add(prod)
+    db_session.commit()
+    db_session.refresh(prod)
+
+    upd_prod_res = client.put(
+        f"/api/v1/products/{prod.id}",
+        headers=headers,
+        json={
+            "local_price": 2199.0,
+            "mrp": 2750.0,
+            "availability_status": "low_stock",
+        },
+    )
+    assert upd_prod_res.status_code == 200
+    upd_prod_data = upd_prod_res.json()
+    assert upd_prod_data["success"] is True
+    assert upd_prod_data["product"]["local_price"] == 2199.0
+    assert upd_prod_data["product"]["mrp"] == 2750.0
+    assert upd_prod_data["product"]["availability_status"] == "low_stock"
+
+
+def test_pan_india_services_and_events_generator(client, db_session):
+    # 1. Verify /api/v1/services synthesizes local providers for non-NCR cities even without user_lat/user_lon
+    svc_patna = client.get("/api/v1/services?city=Patna&locality=Patna+Boring+Road")
+    assert svc_patna.status_code == 200
+    patna_data = svc_patna.json()
+    assert patna_data["total"] >= 5
+    categories_found = {item["category"] for item in patna_data["items"]}
+    for expected_cat in ("Electrician", "Plumber", "AC Repair", "Carpenter", "Appliance Repair"):
+        assert expected_cat in categories_found
+    assert all("Patna" in item["city"] or "Boring Road" in item["locality"] for item in patna_data["items"])
+
+    # 2. Verify category filter for another Indian city (Kochi)
+    svc_kochi = client.get("/api/v1/services?city=Kochi&locality=Kochi+Edappally&category=Electrician")
+    assert svc_kochi.status_code == 200
+    kochi_data = svc_kochi.json()
+    assert kochi_data["total"] >= 1
+    assert kochi_data["items"][0]["category"] == "Electrician"
+    assert "Kochi" in kochi_data["items"][0]["city"]
+
+    # 3. Verify /api/v1/events generates localized events for non-NCR cities with zero Delhi leakage
+    ev_patna = client.get("/api/v1/events?city=Patna&locality=Boring+Road")
+    assert ev_patna.status_code == 200
+    ev_patna_data = ev_patna.json()
+    assert ev_patna_data["total"] >= 6
+    assert all(item["city"].lower() == "patna" for item in ev_patna_data["items"])
+    ev_categories = {item["category"] for item in ev_patna_data["items"]}
+    assert "Concerts & Music" in ev_categories
+    assert "Sports & Screenings" in ev_categories
+    assert "Workshops" in ev_categories
+    assert "Civic Advisory" in ev_categories
+
+    ev_jaipur = client.get("/api/v1/events?city=Jaipur&locality=Malviya+Nagar")
+    assert ev_jaipur.status_code == 200
+    ev_jaipur_data = ev_jaipur.json()
+    assert ev_jaipur_data["total"] >= 6
+    assert all(item["city"].lower() == "jaipur" for item in ev_jaipur_data["items"])
+
+
+def test_community_signals_route_risk_and_scheduler_loops(client, db_session):
+    import asyncio
+    from unittest.mock import AsyncMock, patch
+    from backend.app.ingestion.scheduler import IngestionScheduler
+
+    # 1. Baseline route evaluation before any citizen ground reports
+    route_payload = {
+        "origin_name": "Connaught Place",
+        "origin_latitude": 28.6315,
+        "origin_longitude": 77.2167,
+        "destination_name": "AIIMS / South Extension",
+        "destination_latitude": 28.5672,
+        "destination_longitude": 77.2100,
+    }
+    base_res = client.post("/api/v1/intelligence/routes/evaluate", json=route_payload)
+    assert base_res.status_code == 200
+    base_data = base_res.json()
+    base_surface = next(c for c in base_data["evaluated_corridors"] if "Direct Arterial" in c["route_name"])
+    base_risk = base_surface["risk_score"]
+    base_delay = base_surface["estimated_delay_min"]
+
+    # 2. Submit verified citizen ground reports (WATERLOGGING + ROAD_BLOCKAGE + ACCIDENT)
+    wl_res = client.post(
+        "/api/v1/intelligence/community/signals",
+        json={
+            "signal_type": "WATERLOGGING",
+            "title": "Knee-deep waterlogging at Minto Bridge underpass",
+            "description": "Drainage overflow stalling sedans and two-wheelers",
+            "locality": "Connaught Place",
+            "city": "New Delhi",
+            "state": "Delhi",
+            "latitude": 28.6320,
+            "longitude": 77.2190,
+            "severity": "high",
+        },
+    )
+    assert wl_res.status_code == 201
+    wl_id = wl_res.json()["id"]
+
+    blk_res = client.post(
+        "/api/v1/intelligence/community/signals",
+        json={
+            "signal_type": "ROAD_BLOCKAGE",
+            "title": "Fallen tree blocking two lanes near India Gate hexagon",
+            "locality": "India Gate",
+            "city": "New Delhi",
+            "state": "Delhi",
+            "latitude": 28.6129,
+            "longitude": 77.2295,
+            "severity": "high",
+        },
+    )
+    assert blk_res.status_code == 201
+
+    acc_res = client.post(
+        "/api/v1/intelligence/community/signals",
+        json={
+            "signal_type": "ACCIDENT",
+            "title": "Multi-vehicle collision on Aurobindo Marg flyover approach",
+            "locality": "South Extension",
+            "city": "New Delhi",
+            "state": "Delhi",
+            "latitude": 28.5700,
+            "longitude": 77.2120,
+            "severity": "severe",
+        },
+    )
+    assert acc_res.status_code == 201
+
+    # 3. Verify evaluate_route_risk integrates the 3 citizen reports into score, delay & warnings
+    eval_res = client.post("/api/v1/intelligence/routes/evaluate", json=route_payload)
+    assert eval_res.status_code == 200
+    eval_data = eval_res.json()
+    assert eval_data["active_community_reports_count"] >= 3
+    assert "citizen ground report" in eval_data["ai_commute_advisory"].lower()
+
+    surface = next(c for c in eval_data["evaluated_corridors"] if "Direct Arterial" in c["route_name"])
+    assert surface["community_reports_count"] >= 3
+    assert surface["risk_score"] > base_risk
+    assert surface["estimated_delay_min"] > base_delay
+    assert surface["waterlogging_risk"] in ("HIGH", "CRITICAL")
+    assert any("WATERLOGGING" in h for h in surface["community_hazards"])
+    assert any("ROAD_BLOCKAGE" in h for h in surface["community_hazards"])
+    assert any("ACCIDENT" in h for h in surface["community_hazards"])
+    assert any("Citizen Ground Report" in w for w in surface["key_warnings"])
+
+    # 4. Verify CorrelationEngine emitted community_ground_truth_correlation insights
+    insights_res = client.get(
+        "/api/v1/intelligence?insight_type=community_ground_truth_correlation&area=Connaught+Place"
+    )
+    assert insights_res.status_code == 200
+    insights_data = insights_res.json()
+    assert insights_data["total"] >= 1
+    first_insight = insights_data["items"][0]
+    assert first_insight["insight_type"] == "community_ground_truth_correlation"
+    assert any(s["type"] == "community" for s in first_insight["signals"])
+
+    # 5. Upvote and Resolve a signal -> verify linked insight deactivates
+    upv_res = client.post(f"/api/v1/intelligence/community/signals/{wl_id}/upvote")
+    assert upv_res.status_code == 200
+    assert upv_res.json()["upvotes"] >= 2
+
+    res_sig = client.post(
+        f"/api/v1/intelligence/community/signals/{wl_id}/resolve?notes=Municipal+pumps+cleared+water"
+    )
+    assert res_sig.status_code == 200
+    assert res_sig.json()["status"] == "RESOLVED"
+
+    # 6. Verify IngestionScheduler includes air_quality + correlation loops and run_once executes both
+    sched = IngestionScheduler()
+    status_info = sched.get_status()
+    assert "air_quality" in status_info["loops"]
+    assert "correlation" in status_info["loops"]
+    assert hasattr(sched, "_aqi_loop")
+    assert hasattr(sched, "_correlation_loop")
+
+    with patch.object(sched.worker, "run_full_sync_cycle", new_callable=AsyncMock) as mock_sync:
+        mock_sync.return_value = [
+            {"source": "weatherapi", "status": "success"},
+            {"source": "tomtom_traffic", "status": "success"},
+            {"source": "ndma_sachet", "status": "success"},
+            {"source": "openaq", "status": "success"},
+        ]
+        cycle_res = asyncio.run(sched.run_once(db=db_session))
+        mock_sync.assert_called_once_with(db_session)
+        assert "logs" in cycle_res
+        assert "insights_emitted" in cycle_res

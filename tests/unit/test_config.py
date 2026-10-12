@@ -25,3 +25,37 @@ def test_default_settings_properties():
     min_lon, min_lat, max_lon, max_lat = bbox
     assert min_lon < max_lon
     assert min_lat < max_lat
+
+
+def test_production_jwt_secret_validation_rejects_default_secret():
+    with pytest.raises((ValueError, Exception)) as exc_info:
+        Settings(
+            APP_ENV="production",
+            JWT_SECRET_KEY="myarea24_local_development_secret_key_2026",
+        )
+    assert "JWT_SECRET_KEY" in str(exc_info.value)
+
+
+def test_production_jwt_secret_validation_rejects_empty_secret():
+    with pytest.raises((ValueError, Exception)) as exc_info:
+        Settings(
+            APP_ENV="production",
+            JWT_SECRET_KEY="",
+        )
+    assert "JWT_SECRET_KEY" in str(exc_info.value)
+
+
+def test_production_jwt_secret_validation_accepts_strong_secret():
+    custom_secret = "v9x_k8P3_mZ4_prod_super_secure_unique_key_9901"
+    s = Settings(
+        APP_ENV="production",
+        JWT_SECRET_KEY=custom_secret,
+    )
+    assert s.APP_ENV == "production"
+    assert s.JWT_SECRET_KEY == custom_secret
+
+
+def test_development_allows_default_jwt_secret():
+    s = Settings(APP_ENV="development")
+    assert s.JWT_SECRET_KEY == "myarea24_local_development_secret_key_2026"
+

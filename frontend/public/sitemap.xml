@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://myarea24.in/</loc><changefreq>hourly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://myarea24.in/businesses</loc><changefreq>daily</changefreq><priority>0.9</priority></url>
+  <url><loc>https://myarea24.in/products</loc><changefreq>daily</changefreq><priority>0.8</priority></url>
+  <url><loc>https://myarea24.in/services</loc><changefreq>daily</changefreq><priority>0.8</priority></url>
+  <url><loc>https://myarea24.in/offers</loc><changefreq>hourly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://myarea24.in/events</loc><changefreq>daily</changefreq><priority>0.7</priority></url>
+  <url><loc>https://myarea24.in/bulletins</loc><changefreq>daily</changefreq><priority>0.7</priority></url>
+  <url><loc>https://myarea24.in/intelligence</loc><changefreq>hourly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://myarea24.in/intelligence/weather</loc><changefreq>hourly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://myarea24.in/intelligence/air-quality</loc><changefreq>hourly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://myarea24.in/intelligence/traffic</loc><changefreq>hourly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://myarea24.in/intelligence/alerts</loc><changefreq>hourly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://myarea24.in/intelligence/assistant</loc><changefreq>daily</changefreq><priority>0.8</priority></url>
+  <url><loc>https://myarea24.in/intelligence/routes</loc><changefreq>hourly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://myarea24.in/intelligence/demand</loc><changefreq>hourly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://myarea24.in/intelligence/community</loc><changefreq>hourly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://myarea24.in/map</loc><changefreq>hourly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://myarea24.in/emergency</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://myarea24.in/market</loc><changefreq>daily</changefreq><priority>0.6</priority></url>
+  <url><loc>https://myarea24.in/offline</loc><changefreq>monthly</changefreq><priority>0.3</priority></url>
+</urlset>

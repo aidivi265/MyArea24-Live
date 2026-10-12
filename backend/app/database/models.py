@@ -219,3 +219,336 @@ class IntelligenceSignal(Base):
         Index("ix_signals_insight", "insight_id"),
         Index("ix_signals_obs", "observation_table", "observation_id"),
     )
+
+
+# ==============================================================================
+# MyArea24 Hyperlocal Marketplace & Discovery Domain Models
+# ==============================================================================
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    phone = Column(String(50), nullable=True, index=True)
+    full_name = Column(String(150), nullable=True)
+    role = Column(String(50), default="resident", nullable=False)  # 'resident', 'merchant', 'admin'
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_verified = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=False)
+
+    businesses = relationship("Business", back_populates="owner")
+    saved_items = relationship("SavedItem", back_populates="user", cascade="all, delete-orphan")
+
+
+class OtpToken(Base):
+    __tablename__ = "otp_tokens"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String(255), nullable=False, index=True)
+    otp_code = Column(String(10), nullable=False)
+    purpose = Column(String(50), default="login", nullable=False)  # 'login', 'signup', 'merchant_onboarding'
+    expires_at = Column(DateTime, nullable=False)
+    is_used = Column(Boolean, default=False, nullable=False)
+    attempts = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_otp_email_code", "email", "otp_code"),
+    )
+
+
+class Business(Base):
+    __tablename__ = "businesses"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    slug = Column(String(150), unique=True, nullable=False, index=True)
+    name = Column(String(200), nullable=False, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    category = Column(String(100), nullable=False, index=True)  # 'Electronics', 'Grocery', 'Pharmacy', 'Stationery', 'Food & Dining', 'Services'
+    subcategory = Column(String(100), nullable=True)
+    description = Column(Text, nullable=True)
+    address = Column(Text, nullable=False)
+    locality = Column(String(100), nullable=False, index=True)
+    city = Column(String(100), nullable=False, index=True)
+    state = Column(String(100), default="Delhi NCR", nullable=False)
+    pincode = Column(String(20), nullable=True)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    phone = Column(String(50), nullable=True)
+    whatsapp = Column(String(50), nullable=True)
+    email = Column(String(100), nullable=True)
+    website = Column(String(255), nullable=True)
+    opening_time = Column(String(10), default="09:00", nullable=False)
+    closing_time = Column(String(10), default="21:30", nullable=False)
+    days_open = Column(String(100), default="Mon-Sun", nullable=False)
+    image_url = Column(String(500), nullable=True)
+    is_verified = Column(Boolean, default=True, nullable=False)
+    status = Column(String(50), default="active", nullable=False)  # 'active', 'pending_approval', 'suspended'
+    rating = Column(Float, default=4.5, nullable=False)
+    review_count = Column(Integer, default=0, nullable=False)
+    view_count = Column(Integer, default=0, nullable=False)
+    call_clicks = Column(Integer, default=0, nullable=False)
+    direction_clicks = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=False)
+
+    owner = relationship("User", back_populates="businesses")
+    products = relationship("Product", back_populates="business", cascade="all, delete-orphan")
+    offers = relationship("Offer", back_populates="business", cascade="all, delete-orphan")
+    enquiries = relationship("CustomerEnquiry", back_populates="business", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("ix_business_locality_category", "locality", "category"),
+        Index("ix_business_city_category", "city", "category"),
+        Index("ix_business_coords", "latitude", "longitude"),
+    )
+
+
+class Product(Base):
+    __tablename__ = "products"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    business_id = Column(Integer, ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(255), nullable=False, index=True)
+    brand = Column(String(100), nullable=True, index=True)
+    model_variant = Column(String(100), nullable=True)
+    category = Column(String(100), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    local_price = Column(Float, nullable=False)  # Price in INR ₹
+    mrp = Column(Float, nullable=True)
+    online_price = Column(Float, nullable=True)  # Online comparison benchmark
+    online_provider = Column(String(50), nullable=True)  # e.g. Amazon, Flipkart, Blinkit
+    online_url = Column(String(500), nullable=True)
+    availability_status = Column(String(50), default="in_stock", nullable=False)  # 'in_stock', 'confirm_with_seller', 'low_stock', 'out_of_stock'
+    stock_quantity = Column(Integer, nullable=True)
+    image_url = Column(String(500), nullable=True)
+    price_updated_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    is_featured = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=False)
+
+    business = relationship("Business", back_populates="products")
+
+    __table_args__ = (
+        Index("ix_product_category_price", "category", "local_price"),
+    )
+
+
+class ServiceListing(Base):
+    __tablename__ = "service_listings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    provider_name = Column(String(200), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    business_id = Column(Integer, ForeignKey("businesses.id", ondelete="SET NULL"), nullable=True)
+    category = Column(String(100), nullable=False, index=True)  # 'Electrician', 'Plumber', 'AC Repair', 'Salon', 'Tutor'
+    description = Column(Text, nullable=True)
+    service_area = Column(String(255), nullable=False)
+    locality = Column(String(100), nullable=False, index=True)
+    city = Column(String(100), nullable=False, index=True)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    phone = Column(String(50), nullable=False)
+    whatsapp = Column(String(50), nullable=True)
+    price_starting_at = Column(Float, nullable=True)
+    price_unit = Column(String(50), default="per visit", nullable=False)
+    timing = Column(String(100), default="08:00 AM - 08:00 PM", nullable=False)
+    experience_years = Column(Integer, default=5, nullable=False)
+    is_verified = Column(Boolean, default=True, nullable=False)
+    is_available = Column(Boolean, default=True, nullable=False)
+    rating = Column(Float, default=4.8, nullable=False)
+    review_count = Column(Integer, default=12, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_service_locality_cat", "locality", "category"),
+    )
+
+
+class Offer(Base):
+    __tablename__ = "offers"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    business_id = Column(Integer, ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    discount_text = Column(String(100), nullable=False)  # e.g., '20% OFF', 'Flat ₹500 Off'
+    coupon_code = Column(String(50), nullable=True)
+    category = Column(String(100), nullable=False, index=True)
+    valid_from = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    valid_until = Column(DateTime, nullable=False)
+    terms_conditions = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    banner_image_url = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+
+    business = relationship("Business", back_populates="offers")
+
+    __table_args__ = (
+        Index("ix_offers_valid_active", "is_active", "valid_until"),
+    )
+
+
+class Event(Base):
+    __tablename__ = "events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    title = Column(String(255), nullable=False)
+    category = Column(String(100), nullable=False, index=True)  # 'Civic Advisory', 'Community', 'Workshop', 'Market'
+    organizer = Column(String(200), nullable=False)
+    venue_name = Column(String(200), nullable=False)
+    address = Column(Text, nullable=False)
+    locality = Column(String(100), nullable=False, index=True)
+    city = Column(String(100), nullable=False, index=True)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime, nullable=True)
+    timing_text = Column(String(150), nullable=True)
+    description = Column(Text, nullable=True)
+    registration_url = Column(String(500), nullable=True)
+    is_verified = Column(Boolean, default=True, nullable=False)
+    source = Column(String(100), default="Official Municipal / Community Board", nullable=False)
+    expected_attendance = Column(Integer, default=500, nullable=True)
+    parking_pressure = Column(String(50), default="MODERATE", nullable=True)  # 'CRITICAL', 'ELEVATED', 'MODERATE', 'NORMAL'
+    arterial_traffic_impact = Column(String(50), default="MODERATE", nullable=True)  # 'HIGH_BOTTLENECK', 'MODERATE', 'LOW'
+    exit_weather_advisory = Column(String(255), nullable=True)
+    correlated_commute_route = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_events_locality_time", "locality", "start_time"),
+    )
+
+
+class CustomerEnquiry(Base):
+    __tablename__ = "customer_enquiries"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    business_id = Column(Integer, ForeignKey("businesses.id", ondelete="CASCADE"), nullable=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
+    service_id = Column(Integer, ForeignKey("service_listings.id", ondelete="SET NULL"), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    customer_name = Column(String(100), nullable=False)
+    customer_phone = Column(String(50), nullable=False)
+    customer_email = Column(String(100), nullable=True)
+    enquiry_type = Column(String(50), default="general", nullable=False)  # 'stock_check', 'price_quote', 'appointment', 'general'
+    message = Column(Text, nullable=False)
+    status = Column(String(50), default="pending", nullable=False)  # 'pending', 'contacted', 'resolved'
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+
+    business = relationship("Business", back_populates="enquiries")
+    service = relationship("ServiceListing")
+
+
+class AnalyticsEvent(Base):
+    __tablename__ = "analytics_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    business_id = Column(Integer, ForeignKey("businesses.id", ondelete="CASCADE"), nullable=True, index=True)
+    product_id = Column(Integer, nullable=True)
+    event_type = Column(String(50), nullable=False)  # 'page_view', 'call_click', 'whatsapp_click', 'direction_click', 'enquiry_submitted'
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+
+
+class SavedItem(Base):
+    __tablename__ = "saved_items"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    item_type = Column(String(50), nullable=False)  # 'business', 'product', 'service', 'offer'
+    item_id = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="saved_items")
+
+    __table_args__ = (
+        Index("ix_saved_user_item", "user_id", "item_type", "item_id"),
+    )
+
+
+class MandiPrice(Base):
+    __tablename__ = "mandi_prices"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    commodity = Column(String(100), nullable=False, index=True)
+    variety = Column(String(100), nullable=True)
+    mandi_name = Column(String(150), nullable=False, index=True)
+    state = Column(String(50), nullable=False)
+    district = Column(String(100), nullable=True, index=True)
+    city = Column(String(100), nullable=True, index=True)
+    category = Column(String(50), default="Vegetables", nullable=True)
+    modal_price = Column(Float, nullable=False)
+    min_price = Column(Float, nullable=True)
+    max_price = Column(Float, nullable=True)
+    unit = Column(String(20), default="kg", nullable=False)
+    arrival_volume = Column(String(50), nullable=True)
+    price_trend = Column(String(50), default="Stable", nullable=False)
+    observed_date = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+
+
+class CivicBulletin(Base):
+    __tablename__ = "civic_bulletins"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    title = Column(String(255), nullable=False)
+    summary = Column(Text, nullable=False)
+    source_agency = Column(String(150), nullable=False)
+    category = Column(String(50), default="Transit & Safety", nullable=False)
+    locality = Column(String(100), nullable=True, index=True)
+    city = Column(String(50), nullable=True, index=True)
+    priority = Column(String(20), default="medium", nullable=False)
+    published_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    official_link = Column(String(500), nullable=True)
+
+
+class EmergencyFacility(Base):
+    __tablename__ = "emergency_facilities"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False)
+    facility_type = Column(String(100), default="Casualty & Trauma Center", nullable=False)
+    phone = Column(String(50), nullable=False)
+    secondary_phone = Column(String(50), nullable=True)
+    address = Column(Text, nullable=False)
+    locality = Column(String(100), nullable=False, index=True)
+    city = Column(String(100), nullable=False, index=True)
+    state = Column(String(100), nullable=False, index=True)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    is_24_7 = Column(Boolean, default=True, nullable=False)
+    trauma_level = Column(String(50), default="Level-1", nullable=True)
+    blood_bank_available = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_emergency_city_locality", "city", "locality"),
+    )
+
+
+class CommunitySignal(Base):
+    __tablename__ = "community_signals"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    signal_type = Column(String(50), nullable=False)  # 'WATERLOGGING', 'POTHOLE', 'ROAD_BLOCKAGE', 'ACCIDENT', 'LOCAL_MARKET'
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    locality = Column(String(100), nullable=False, index=True)
+    city = Column(String(100), nullable=False, index=True)
+    state = Column(String(100), default="India", nullable=False)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    upvotes = Column(Integer, default=1, nullable=False)
+    status = Column(String(50), default="COMMUNITY_VERIFIED", nullable=False)  # 'REPORTED', 'COMMUNITY_VERIFIED', 'RESOLVED'
+    severity = Column(String(20), default="moderate", nullable=False)  # 'low', 'moderate', 'high', 'severe'
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_comm_signals_loc_time", "locality", "created_at"),
+        Index("ix_comm_signals_coords", "latitude", "longitude"),
+    )
+

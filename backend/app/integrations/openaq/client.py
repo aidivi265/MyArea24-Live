@@ -74,6 +74,38 @@ class OpenAQClient(BaseProviderClient):
         records: List[NormalizedAQIRecord] = []
 
         for item in results:
+            loc_id = item.get("id")
+            # In OpenAQ v3, /locations lists sensors, while actual current telemetry is queried from /locations/{id}/latest
+            if loc_id and not item.get("measurements"):
+                try:
+                    latest_url = f"{self.base_url}/locations/{loc_id}/latest"
+                    latest_resp = await self._get(latest_url, headers=headers)
+                    if latest_resp.status_code == 200:
+                        latest_payload = latest_resp.json()
+                        latest_items = latest_payload.get("results", [])
+                        sensor_map = {
+                            s.get("id"): (
+                                s.get("parameter", {}).get("name", "") if isinstance(s.get("parameter"), dict) else str(s.get("parameter", "")),
+                                s.get("parameter", {}).get("units", "") if isinstance(s.get("parameter"), dict) else str(s.get("units", "")),
+                            )
+                            for s in item.get("sensors", [])
+                            if isinstance(s, dict)
+                        }
+                        measurements = []
+                        for m in latest_items:
+                            p_name, unit = sensor_map.get(m.get("sensorsId"), ("", ""))
+                            if p_name:
+                                measurements.append({
+                                    "parameter": p_name,
+                                    "value": m.get("value"),
+                                    "unit": unit,
+                                    "lastUpdated": m.get("datetime", {}).get("utc") if isinstance(m.get("datetime"), dict) else None,
+                                })
+                        if measurements:
+                            item["measurements"] = measurements
+                except Exception as ex:
+                    logger.debug(f"[openaq] Telemetry enrichment fallback for station {loc_id}: {ex}")
+
             rec = normalize_openaq_location_response(item)
             if rec:
                 records.append(rec)
@@ -100,5 +132,33 @@ class OpenAQClient(BaseProviderClient):
 
         results = payload.get("results", [])
         if results:
-            return normalize_openaq_location_response(results[0])
+            item = results[0]
+            try:
+                latest_url = f"{self.base_url}/locations/{location_id}/latest"
+                latest_resp = await self._get(latest_url, headers=headers)
+                if latest_resp.status_code == 200:
+                    latest_payload = latest_resp.json()
+                    sensor_map = {
+                        s.get("id"): (
+                            s.get("parameter", {}).get("name", "") if isinstance(s.get("parameter"), dict) else str(s.get("parameter", "")),
+                            s.get("parameter", {}).get("units", "") if isinstance(s.get("parameter"), dict) else str(s.get("units", "")),
+                        )
+                        for s in item.get("sensors", [])
+                        if isinstance(s, dict)
+                    }
+                    measurements = []
+                    for m in latest_payload.get("results", []):
+                        p_name, unit = sensor_map.get(m.get("sensorsId"), ("", ""))
+                        if p_name:
+                            measurements.append({
+                                "parameter": p_name,
+                                "value": m.get("value"),
+                                "unit": unit,
+                                "lastUpdated": m.get("datetime", {}).get("utc") if isinstance(m.get("datetime"), dict) else None,
+                            })
+                    if measurements:
+                        item["measurements"] = measurements
+            except Exception:
+                pass
+            return normalize_openaq_location_response(item)
         return None

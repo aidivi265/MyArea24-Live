@@ -70,3 +70,88 @@ class WeatherAPIClient(BaseProviderClient):
         self._cache[cache_key] = (records, now + cache_ttl)
 
         return records
+
+    async def fetch_air_quality(
+        self,
+        lat: float,
+        lon: float,
+        area_name: Optional[str] = None,
+    ) -> Optional[Any]:
+        """
+        Fetches live air quality pollutants (PM2.5, PM10, NO2, SO2, CO, O3) from WeatherAPI.com
+        (forecast.json with aqi=yes) and computes official Indian CPCB 2014 NAQI.
+        """
+        if not self.api_key:
+            raise ProviderAuthError("weatherapi", "WEATHERAPI_API_KEY is not configured.")
+
+        from backend.app.normalization.air_quality import NormalizedAQIRecord
+        from backend.app.normalization.aqi_calculator import (
+            calculate_cpcb_aqi,
+            convert_pollutant_concentration,
+        )
+
+        url = f"{self.base_url}/forecast.json"
+        params = {
+            "key": self.api_key,
+            "q": f"{lat},{lon}",
+            "days": 1,
+            "aqi": "yes",
+            "alerts": "no",
+        }
+
+        logger.info(f"[weatherapi] Fetching live AQI telemetry for ({lat:.4f}, {lon:.4f})")
+        response = await self._get(url, params=params)
+        data = response.json()
+
+        loc = data.get("location") or {}
+        curr = data.get("current") or {}
+        aq = curr.get("air_quality") or {}
+        if not aq:
+            return None
+
+        pollutants: Dict[str, Optional[float]] = {}
+        if aq.get("pm2_5") is not None:
+            pollutants["PM2.5"] = round(float(aq["pm2_5"]), 1)
+        if aq.get("pm10") is not None:
+            pollutants["PM10"] = round(float(aq["pm10"]), 1)
+        if aq.get("no2") is not None:
+            pollutants["NO2"] = round(float(aq["no2"]), 1)
+        if aq.get("so2") is not None:
+            pollutants["SO2"] = round(float(aq["so2"]), 1)
+        if aq.get("co") is not None:
+            pollutants["CO"] = convert_pollutant_concentration("CO", float(aq["co"]), "µg/m³")
+        if aq.get("o3") is not None:
+            pollutants["O3"] = round(float(aq["o3"]), 1)
+
+        calc_res = calculate_cpcb_aqi(pollutants)
+        if not calc_res:
+            return None
+
+        now = datetime.datetime.utcnow()
+        city_name = loc.get("name") or area_name or "Local District"
+        state_name = loc.get("region") or "India"
+        station_id = f"WAPI-{round(lat, 2)}-{round(lon, 2)}"
+
+        return NormalizedAQIRecord(
+            source_id="openaq",
+            source_record_id=f"weatherapi_aqi:{station_id}:{now.strftime('%Y%m%d%H')}",
+            station_id=station_id,
+            station_name=f"{city_name} Ambient Air Monitoring Grid ({state_name})",
+            city=city_name,
+            state=state_name,
+            latitude=float(loc.get("lat", lat)),
+            longitude=float(loc.get("lon", lon)),
+            observed_at=now,
+            aqi_value=calc_res.aqi_value,
+            aqi_category=calc_res.aqi_category,
+            prominent_pollutant=calc_res.prominent_pollutant,
+            pm25=pollutants.get("PM2.5"),
+            pm10=pollutants.get("PM10"),
+            no2=pollutants.get("NO2"),
+            so2=pollutants.get("SO2"),
+            co=pollutants.get("CO"),
+            o3=pollutants.get("O3"),
+            is_naqi_compliant=calc_res.is_naqi_compliant,
+            raw_data=aq,
+        )
+

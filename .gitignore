@@ -38,7 +38,10 @@ htmlcov/
 
 # Databases & local storage
 *.db
+*.db-shm
+*.db-wal
 *.sqlite3
+*.tsbuildinfo
 data/
 
 # IDE / OS

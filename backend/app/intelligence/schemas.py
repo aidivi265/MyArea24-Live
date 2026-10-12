@@ -4,8 +4,8 @@ from pydantic import BaseModel, Field
 
 
 class SignalProvenance(BaseModel):
-    type: str  # 'weather', 'traffic', 'alert'
-    source: str  # 'weatherapi', 'tomtom_traffic', 'here_traffic', 'sachet_cap'
+    type: str  # 'weather', 'traffic', 'alert', 'air_quality', 'event', 'community'
+    source: str  # 'weatherapi', 'tomtom_traffic', 'here_traffic', 'sachet_cap', 'community_signal_mesh'
     observation_id: int | str
     observed_at: datetime.datetime
     freshness_minutes: Optional[float] = None
@@ -48,4 +48,7 @@ class RuleEvaluationResult(BaseModel):
     supporting_traffic_id: Optional[int] = None
     supporting_notice_id: Optional[int] = None
     supporting_aqi_id: Optional[int] = None
+    supporting_event_id: Optional[int] = None
+    supporting_community_signal_id: Optional[int] = None
+
 

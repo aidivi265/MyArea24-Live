@@ -212,3 +212,48 @@ async def test_sachet_worker_expiry_and_duplicate_persistence(
     assert active_notice.is_active is False
 
 
+@pytest.mark.asyncio
+async def test_scheduler_runs_aqi_sync_and_correlation(
+    db_session,
+    heavy_rain_fixture,
+    heavy_traffic_fixture,
+    valid_cap_xml,
+):
+    from backend.app.ingestion.scheduler import IngestionScheduler
+
+    mock_weather = AsyncMock()
+    mock_weather.provider_name = "weatherapi"
+    mock_weather.fetch_forecast.return_value = normalize_weatherapi_response(heavy_rain_fixture)
+
+    mock_traffic = AsyncMock()
+    mock_traffic.provider_name = "here_traffic"
+    mock_traffic.fetch_incidents.return_value = normalize_here_traffic_response(heavy_traffic_fixture)
+
+    mock_sachet = AsyncMock()
+    mock_sachet.provider_name = "sachet_cap"
+    mock_sachet.fetch_alerts.return_value = parse_cap_xml_payload(valid_cap_xml)
+
+    worker = IngestionWorker(
+        weather_client=mock_weather,
+        traffic_client=mock_traffic,
+        sachet_client=mock_sachet,
+    )
+    sched = IngestionScheduler(worker=worker)
+
+    # Verify scheduler status metadata includes all 5 loops (weather, traffic, sachet, air_quality, correlation)
+    status_info = sched.get_status()
+    assert status_info["loops"] == ["weather", "traffic", "sachet", "air_quality", "correlation"]
+
+    # Execute single scheduler pass over db_session
+    cycle_res = await sched.run_once(db=db_session)
+    assert "air_quality" in cycle_res["logs"]
+    assert "weather" in cycle_res["logs"]
+    assert "traffic" in cycle_res["logs"]
+    assert "sachet" in cycle_res["logs"]
+
+    # Verify start() initializes all 5 background tasks and stop() shuts them down cleanly
+    sched.start()
+    assert sched.get_status()["running"] is True
+    assert len(sched._tasks) == 5
+    await sched.stop()
+    assert sched.get_status()["running"] is False

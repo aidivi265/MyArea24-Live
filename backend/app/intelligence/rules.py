@@ -8,6 +8,8 @@ from backend.app.database.models import (
     TrafficObservation,
     GovernmentNotice,
     AirQualityObservation,
+    Event,
+    CommunitySignal,
 )
 from backend.app.intelligence.schemas import (
     AreaInfo,
@@ -67,8 +69,13 @@ def is_point_in_circle(
 ) -> bool:
     """Checks whether a point falls within a circle geometry plus buffer."""
     try:
-        c_lat = float(circle_geojson.get("latitude", 0.0))
-        c_lon = float(circle_geojson.get("longitude", 0.0))
+        center = circle_geojson.get("center")
+        if isinstance(center, (list, tuple)) and len(center) >= 2:
+            c_lon = float(center[0])
+            c_lat = float(center[1])
+        else:
+            c_lat = float(circle_geojson.get("latitude", 0.0))
+            c_lon = float(circle_geojson.get("longitude", 0.0))
         radius_km = float(circle_geojson.get("radius_km", 0.0))
         dist = haversine_distance_km(lat, lon, c_lat, c_lon)
         return dist <= (radius_km + buffer_km)
@@ -830,4 +837,322 @@ def evaluate_scenario_e_aqi_rule(
         insight=insight,
         supporting_aqi_id=aqi_obs.id,
     )
+
+
+def evaluate_scenario_f_event_correlation(
+    event: Event,
+    weather: Optional[WeatherObservation],
+    traffic: Optional[TrafficObservation],
+    area_label: str,
+    area_lat: Optional[float] = None,
+    area_lon: Optional[float] = None,
+    reference_time_utc: Optional[datetime.datetime] = None,
+) -> RuleEvaluationResult:
+    """
+    Evaluates Scenario F: Event + Weather + Traffic + Parking Cross-Signal Correlation (PPT Slide 03).
+    Correlates an active/upcoming event gathering with live rainfall, rising traffic congestion,
+    and escalating parking pressure around the venue.
+    """
+    ref_time = reference_time_utc or datetime.datetime.utcnow()
+
+    # 1. Temporal Relevance: Event occurs within 12 hours window
+    event_start = event.start_time
+    if event_start.tzinfo is not None:
+        event_start = event_start.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+
+    # Event must be between 2 hours ago and 10 hours in the future
+    if not (ref_time - datetime.timedelta(hours=2) <= event_start <= ref_time + datetime.timedelta(hours=10)):
+        return RuleEvaluationResult(matched=False, reason="Event outside temporal window (+10h / -2h)")
+
+    # 2. Check for Cross-Signal Stress
+    attendance = getattr(event, "expected_attendance", 500) or 500
+    parking_status = getattr(event, "parking_pressure", "NORMAL") or "NORMAL"
+    precip_mm = (weather.precipitation_mm or 0.0) if weather else 0.0
+    delay_sec = (traffic.delay_seconds or 0) if traffic else 0
+
+    has_rain = precip_mm > 0.0
+    has_traffic = delay_sec >= 300  # >= 5 minutes delay
+    has_high_crowd = attendance >= 1000 or parking_status in ["ELEVATED", "CRITICAL"]
+
+    # Match if event has high crowd and either rain or rising traffic is present
+    if not (has_high_crowd and (has_rain or has_traffic or parking_status == "CRITICAL")):
+        return RuleEvaluationResult(
+            matched=False,
+            reason="Insufficient cross-signal stress: event requires elevated crowd combined with rain or traffic congestion",
+        )
+
+    # Determine composite severity
+    if (has_rain and precip_mm >= 10.0 and has_traffic) or parking_status == "CRITICAL" or attendance >= 4000:
+        severity = "severe"
+    elif has_rain and has_traffic:
+        severity = "high"
+    else:
+        severity = "moderate"
+
+    headline = f"Event Commute Alert: Heavy Traffic & Rising Parking Pressure near {event.venue_name} ({event.title})"
+    summary = f"Heavy traffic expected near the {event.venue_name} area due to '{event.title}'. Rain and wet surfaces may increase travel time. Parking demand is also rising sharply."
+    potential_impact = (
+        f"Corridors approaching {event.venue_name} ({event.locality or event.city}) face +{round(delay_sec/60)}m delays. "
+        f"Venue parking demand is {parking_status.lower()}; designated lots likely saturated."
+    )
+    recommendation = (
+        "• Leave earlier (allow 30-45 minutes travel buffer)\n"
+        "• Consider safer alternative route bypassing congested venue gates\n"
+        "• Check parking availability or utilize designated satellite Metro transit parking"
+    )
+
+    signals: List[SignalProvenance] = []
+    signals.append(
+        SignalProvenance(
+            type="event",
+            source=event.source or "Verified Civic Events",
+            observation_id=event.id,
+            observed_at=event.start_time,
+            metric_summary=f"Event '{event.title}' at {event.venue_name} (~{attendance} attendees, parking: {parking_status})",
+        )
+    )
+
+    if weather:
+        signals.append(
+            SignalProvenance(
+                type="weather",
+                source=getattr(weather, "source_id", "weatherapi"),
+                observation_id=weather.id,
+                observed_at=weather.observed_at,
+                metric_summary=f"Precipitation: {precip_mm}mm, Condition: {weather.condition_text}",
+            )
+        )
+
+    if traffic:
+        signals.append(
+            SignalProvenance(
+                type="traffic",
+                source="tomtom_traffic",
+                observation_id=traffic.id,
+                observed_at=traffic.observed_at,
+                metric_summary=f"Approach delay: +{round(delay_sec/60)} mins on {traffic.road_name or 'arterial corridor'}",
+            )
+        )
+
+    insight = IntelligenceInsightOutput(
+        insight_type="event_weather_traffic_correlation",
+        area=AreaInfo(
+            label=f"{event.venue_name}, {event.locality or event.city}",
+            latitude=event.latitude,
+            longitude=event.longitude,
+            radius_km=settings.RULE_SPATIAL_RADIUS_KM,
+        ),
+        headline=headline,
+        summary=summary,
+        potential_impact=potential_impact,
+        recommendation=recommendation,
+        evidence_quality="supported",
+        composite_severity=severity,
+        confidence_level="HIGH (Multi-Signal Fused: Event + Weather + Traffic + Parking)",
+        rule_identifier="SCENARIO_D_EVENT_COMMUTE_CORRELATION",
+        rule_version="1.0",
+        data_quality_notes=f"Fused event attendance telemetry (~{attendance} pax) with live sensor streams",
+        observed_at=event.start_time,
+        created_at=ref_time,
+        expires_at=ref_time + datetime.timedelta(hours=4),
+        next_review_at=ref_time + datetime.timedelta(minutes=30),
+        signals=signals,
+    )
+
+    return RuleEvaluationResult(
+        matched=True,
+        reason=f"Scenario D satisfied: Event '{event.title}' correlated with rain={has_rain} ({precip_mm}mm) and delay={round(delay_sec/60)}m",
+        insight=insight,
+        supporting_event_id=event.id,
+        supporting_weather_id=weather.id if weather else None,
+        supporting_traffic_id=traffic.id if traffic else None,
+    )
+
+
+def evaluate_scenario_g_community_signal_correlation(
+    signal: CommunitySignal,
+    weather: Optional[WeatherObservation] = None,
+    traffic: Optional[TrafficObservation] = None,
+    reference_time_utc: Optional[datetime.datetime] = None,
+) -> RuleEvaluationResult:
+    """
+    Evaluates Scenario G: Community Ground-Truth Signal Mesh Correlation (PPT Slide 09).
+    Integrates citizen-reported ground conditions (WATERLOGGING, POTHOLE, ROAD_BLOCKAGE,
+    ACCIDENT, LOCAL_MARKET) into the local intelligence signal mesh, fusing them with
+    corroborating weather and arterial traffic telemetry.
+    """
+    ref_time = reference_time_utc or datetime.datetime.utcnow()
+
+    if not is_valid_coordinate(signal.latitude, signal.longitude):
+        return RuleEvaluationResult(matched=False, reason="Invalid or missing community signal coordinates")
+
+    if (signal.status or "").upper() == "RESOLVED":
+        return RuleEvaluationResult(matched=False, reason="Community signal is already resolved")
+
+    created_dt = signal.created_at.replace(tzinfo=None) if signal.created_at else ref_time
+    age_minutes = max(0.0, (ref_time - created_dt).total_seconds() / 60.0)
+    if age_minutes > 720.0:  # 12-hour relevance window
+        return RuleEvaluationResult(
+            matched=False,
+            reason=f"Community signal age ({age_minutes:.0f}m) exceeds 720m active mesh window",
+        )
+
+    sig_type = (signal.signal_type or "ROAD_BLOCKAGE").upper().strip()
+    sig_sev = (signal.severity or "moderate").lower().strip()
+    upvotes = signal.upvotes or 1
+    is_verified = (signal.status or "").upper() in ("COMMUNITY_VERIFIED", "ESCALATED_TO_MUNICIPALITY") or upvotes >= 2
+
+    precip_mm = (weather.precipitation_mm or 0.0) if weather else 0.0
+    delay_sec = (traffic.delay_seconds or 0) if traffic else 0
+    delay_min = round(delay_sec / 60)
+
+    has_corroborating_weather = weather is not None and (
+        precip_mm >= 1.0 or (sig_type == "WATERLOGGING" and (weather.humidity or 0) >= 70)
+    )
+    has_corroborating_traffic = traffic is not None and (
+        delay_sec >= 180 or (traffic.jam_factor or 0) >= 4.0 or (traffic.criticality or "").lower() in ("major", "critical")
+    )
+
+    if not (is_verified or sig_sev in ("high", "severe", "critical") or has_corroborating_weather or has_corroborating_traffic):
+        return RuleEvaluationResult(
+            matched=False,
+            reason="Unverified low-severity community report without sensor corroboration",
+        )
+
+    area_label = f"{signal.locality}, {signal.city}" if signal.locality and signal.city and signal.city.lower() not in signal.locality.lower() else (signal.locality or signal.city or "Local Corridor")
+
+    if sig_sev in ("severe", "critical") or upvotes >= 5 or (sig_type in ("WATERLOGGING", "ACCIDENT", "ROAD_BLOCKAGE") and has_corroborating_traffic and delay_min >= 20):
+        composite_severity = "severe"
+    elif sig_sev == "high" or upvotes >= 3 or has_corroborating_weather or has_corroborating_traffic:
+        composite_severity = "high"
+    else:
+        composite_severity = "moderate"
+
+    type_labels = {
+        "WATERLOGGING": "Waterlogging Hazard",
+        "POTHOLE": "Road Surface / Crater Hazard",
+        "ROAD_BLOCKAGE": "Road Blockage & Diversion",
+        "ACCIDENT": "Traffic Accident & Lane Obstruction",
+        "LOCAL_MARKET": "Local Market Crowd Surge",
+    }
+    badge = type_labels.get(sig_type, "Community Ground Hazard")
+    headline = f"Citizen Ground Alert ({badge}): {signal.title} at {area_label}"
+
+    corroboration_parts = [f"Peer-verified citizen report ({upvotes} upvote{'s' if upvotes != 1 else ''}, status: {signal.status})"]
+    if weather and precip_mm > 0:
+        corroboration_parts.append(f"corroborated by {precip_mm:.1f}mm rainfall ({weather.condition_text})")
+    if traffic and delay_min > 0:
+        corroboration_parts.append(f"intersecting +{delay_min}m traffic delay on {traffic.road_name or 'nearby arterial'}")
+
+    summary = (
+        f"Ground-truth {sig_type.replace('_', ' ').lower()} reported in {area_label}: \"{signal.title}\". "
+        f"{signal.description or ''} ({', '.join(corroboration_parts)})."
+    ).strip()
+
+    if sig_type == "WATERLOGGING":
+        potential_impact = (
+            f"Surface water accumulation near {signal.locality} poses stalling risks for two-wheelers and low-clearance vehicles"
+            f"{f', compounded by +{delay_min}m corridor congestion' if delay_min > 0 else ''}."
+        )
+        recommendation = (
+            f"Avoid low-lying underpasses and surface lanes near {signal.locality}. "
+            "Use the Elevated Bypass / Ring Road or Rapid Metro corridor until drainage clearance is confirmed."
+        )
+    elif sig_type in ("ROAD_BLOCKAGE", "ACCIDENT"):
+        potential_impact = (
+            f"Active carriageway obstruction near {signal.locality} is restricting through-traffic"
+            f"{f' with +{delay_min}m bottleneck delays' if delay_min > 0 else ''}."
+        )
+        recommendation = (
+            f"Detour around {signal.locality} via parallel ring road links. Allow 15-25 minutes extra commute buffer."
+        )
+    elif sig_type == "POTHOLE":
+        potential_impact = (
+            f"Severe road surface damage / pothole cluster at {signal.locality} increases braking distance and two-wheeler skidding risk"
+            f"{' especially on wet asphalt' if precip_mm > 0 else ''}."
+        )
+        recommendation = (
+            f"Reduce speed below 25 km/h when approaching {signal.locality} or choose grade-separated arterial routes."
+        )
+    else:
+        potential_impact = f"Elevated pedestrian and vehicular density near {signal.locality} causing localized slowdowns."
+        recommendation = f"Expect slower last-mile movement near {signal.locality}; prefer two-wheeler or pedestrian access."
+
+    signals: List[SignalProvenance] = [
+        SignalProvenance(
+            type="community",
+            source="community_signal_mesh",
+            observation_id=signal.id,
+            observed_at=created_dt,
+            freshness_minutes=round(age_minutes, 1),
+            metric_summary=f"Community {sig_type}: {signal.title} ({upvotes} upvotes, severity={sig_sev}, status={signal.status})",
+        )
+    ]
+
+    if weather:
+        w_age = max(0.0, (ref_time - weather.observed_at.replace(tzinfo=None)).total_seconds() / 60.0)
+        signals.append(
+            SignalProvenance(
+                type="weather",
+                source=weather.source_id or "weatherapi",
+                observation_id=weather.id,
+                observed_at=weather.observed_at,
+                freshness_minutes=round(w_age, 1),
+                metric_summary=f"Precipitation: {precip_mm:.1f} mm/hr ({weather.condition_text}, {weather.temperature_c}°C)",
+            )
+        )
+
+    if traffic:
+        t_age = max(0.0, (ref_time - traffic.observed_at.replace(tzinfo=None)).total_seconds() / 60.0)
+        signals.append(
+            SignalProvenance(
+                type="traffic",
+                source=traffic.source_id or "tomtom_traffic",
+                observation_id=traffic.id,
+                observed_at=traffic.observed_at,
+                freshness_minutes=round(t_age, 1),
+                metric_summary=f"Traffic on {traffic.road_name or 'Corridor'}: delay +{delay_min} mins ({traffic.criticality or 'elevated'})",
+            )
+        )
+
+    conf_str = (
+        "HIGH (Citizen Ground-Truth + Multi-Sensor Corroborated)"
+        if (weather or traffic)
+        else "HIGH (Peer-Verified Citizen Ground Mesh)"
+    )
+
+    insight = IntelligenceInsightOutput(
+        insight_type="community_ground_truth_correlation",
+        area=AreaInfo(
+            label=area_label,
+            latitude=signal.latitude,
+            longitude=signal.longitude,
+            radius_km=settings.RULE_SPATIAL_RADIUS_KM,
+        ),
+        headline=headline,
+        summary=summary,
+        potential_impact=potential_impact,
+        recommendation=recommendation,
+        evidence_quality="supported",
+        composite_severity=composite_severity,
+        confidence_level=conf_str,
+        rule_identifier="SCENARIO_G_COMMUNITY_SIGNAL_MESH",
+        rule_version="1.0",
+        data_quality_notes=f"Integrated from Community Signal Mesh (#{signal.id}, {upvotes} upvotes, {sig_type}).",
+        observed_at=created_dt,
+        created_at=ref_time,
+        expires_at=ref_time + datetime.timedelta(hours=3),
+        next_review_at=ref_time + datetime.timedelta(minutes=20),
+        signals=signals,
+    )
+
+    return RuleEvaluationResult(
+        matched=True,
+        reason=f"Scenario G satisfied: Community signal #{signal.id} ({sig_type}) integrated into local signal mesh",
+        insight=insight,
+        supporting_community_signal_id=signal.id,
+        supporting_weather_id=weather.id if weather else None,
+        supporting_traffic_id=traffic.id if traffic else None,
+    )
+
 

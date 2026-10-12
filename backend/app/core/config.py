@@ -1,7 +1,7 @@
 import json
 import logging
 from typing import Any, List, Optional
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,13 +38,68 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     DEBUG: bool = True
 
+    # CORS Configuration (W3C Fetch Specification Compliant)
+    ALLOWED_ORIGINS: Any = Field(
+        default=[
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:5174",
+            "http://127.0.0.1:5174",
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:8080",
+            "http://127.0.0.1:8080",
+            "http://localhost:4173",
+            "http://127.0.0.1:4173",
+            "https://aidivi265.github.io",
+        ]
+    )
+    ALLOWED_ORIGIN_REGEX: Optional[str] = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$|^https://aidivi265\.github\.io$"
+
     # Database
     DATABASE_URL: str = "sqlite:///./myarea24.db"
+    DB_POOL_SIZE: int = 15
+    DB_MAX_OVERFLOW: int = 25
+    DB_POOL_TIMEOUT: int = 30
+    DB_POOL_RECYCLE: int = 1800
 
-    # WeatherAPI
+    # Authentication & JWT Configuration
+    JWT_SECRET_KEY: str = "myarea24_local_development_secret_key_2026"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 days
+
+    # Email & SMTP Configuration for OTP Delivery
+    # In development mode, if SMTP credentials are blank, OTP is logged to console and provided in dev responses
+    SMTP_HOST: Optional[str] = None
+    SMTP_PORT: int = 587
+    SMTP_USER: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_FROM: str = "no-reply@myarea24.in"
+    SMTP_TLS: bool = True
+    OTP_DEV_MODE: bool = True
+
+    # Resend Transactional Email API (Alternative to SMTP)
+    RESEND_API_KEY: Optional[str] = None
+
+    # Google Gemini AI Assistant Configuration
+    GEMINI_API_KEY: Optional[str] = None
+    GEMINI_MODEL: str = "gemini-3.5-flash"
+
+    # Sarvam AI — Indian language TTS, STT, translation (https://www.sarvam.ai)
+    SARVAM_API_KEY: Optional[str] = None
+    SARVAM_API_BASE_URL: str = "https://api.sarvam.ai"
+
+    # Google Maps Platform
+    GOOGLE_MAPS_API_KEY: Optional[str] = None
+
+    # Weather Providers (WeatherAPI Primary, OpenWeatherMap Secondary)
     WEATHERAPI_API_KEY: Optional[str] = None
     WEATHERAPI_BASE_URL: str = "https://api.weatherapi.com/v1"
+    OPENWEATHERMAP_API_KEY: Optional[str] = None
     WEATHER_POLL_INTERVAL_MINUTES: int = 30
+
+    # Fuel Price Telemetry (API Mitra)
+    API_MITRA_API_KEY: Optional[str] = None
 
     # Traffic Provider Configuration (TomTom Primary, HERE Optional Fallback)
     TRAFFIC_PROVIDER: str = "tomtom"  # "tomtom" or "here"
@@ -68,6 +123,7 @@ class Settings(BaseSettings):
     AQI_POLL_INTERVAL_MINUTES: int = 60
     AQI_MAX_STATION_DISTANCE_KM: float = 15.0
     AQI_OBSERVATION_MAX_AGE_MINUTES: int = 180
+    CORRELATION_POLL_INTERVAL_MINUTES: int = 10
 
     @field_validator("OPENAQ_API_KEY")
     @classmethod
@@ -122,11 +178,37 @@ class Settings(BaseSettings):
         return [PilotLocation(**item) if isinstance(item, dict) else item for item in raw]
 
     @property
+    def cors_origins(self) -> List[str]:
+        if isinstance(self.ALLOWED_ORIGINS, str):
+            raw = self.ALLOWED_ORIGINS.strip()
+            if raw.startswith("["):
+                try:
+                    return json.loads(raw)
+                except Exception:
+                    pass
+            return [orig.strip() for orig in raw.split(",") if orig.strip()]
+        elif isinstance(self.ALLOWED_ORIGINS, list):
+            return [str(x) for x in self.ALLOWED_ORIGINS]
+        return ["http://localhost:5173", "https://aidivi265.github.io"]
+
+    @property
     def traffic_bbox_coords(self) -> tuple[float, float, float, float]:
         parts = [float(x.strip()) for x in self.PILOT_TRAFFIC_BBOX.split(",")]
         if len(parts) != 4:
             raise ValueError(f"Invalid PILOT_TRAFFIC_BBOX: {self.PILOT_TRAFFIC_BBOX}")
         return parts[0], parts[1], parts[2], parts[3]
+
+    @model_validator(mode="after")
+    def validate_production_security(self) -> "Settings":
+        env = (self.APP_ENV or "").strip().lower()
+        default_insecure_key = "myarea24_local_development_secret_key_2026"
+        if env in ["production", "prod"]:
+            if not self.JWT_SECRET_KEY or default_insecure_key in self.JWT_SECRET_KEY:
+                raise ValueError(
+                    "CRITICAL SECURITY CONFIGURATION ERROR: Default JWT_SECRET_KEY cannot be used "
+                    "when APP_ENV is set to 'production'. You must configure a secure, unique JWT_SECRET_KEY."
+                )
+        return self
 
 
 settings = Settings()

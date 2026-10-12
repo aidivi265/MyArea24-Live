@@ -13,6 +13,8 @@ from backend.app.database.models import (
     AirQualityObservation,
     IntelligenceInsight,
     IntelligenceSignal,
+    Event,
+    CommunitySignal,
 )
 from backend.app.intelligence.rules import (
     evaluate_scenario_a_rule,
@@ -21,6 +23,8 @@ from backend.app.intelligence.rules import (
     evaluate_scenario_c_weather_rule,
     evaluate_scenario_d_rule,
     evaluate_scenario_e_aqi_rule,
+    evaluate_scenario_f_event_correlation,
+    evaluate_scenario_g_community_signal_correlation,
     haversine_distance_km,
 )
 from backend.app.intelligence.schemas import IntelligenceInsightOutput, RuleEvaluationResult
@@ -138,6 +142,10 @@ class CorrelationEngine:
                 obs_table = "government_notices"
             elif sig.type == "air_quality":
                 obs_table = "air_quality_observations"
+            elif sig.type == "event":
+                obs_table = "events"
+            elif sig.type == "community":
+                obs_table = "community_signals"
             else:
                 obs_table = "unknown"
 
@@ -165,12 +173,15 @@ class CorrelationEngine:
         run_scenario_a: bool = True,
         run_scenario_b: bool = True,
         run_scenario_c: bool = True,
+        run_scenario_d: bool = True,
         run_scenario_e: bool = True,
+        run_scenario_g: bool = True,
     ) -> List[IntelligenceInsight]:
         """
         Executes complete multi-scenario intelligence pipeline across all active observation streams.
         Evaluates Scenario A (Weather + Traffic), Scenario B (Severe Public Alert),
-        Scenario C (Single-Signal Notices), and Scenario E (Air Quality Intelligence).
+        Scenario C (Single-Signal Notices), Scenario D (Event + Weather + Traffic),
+        Scenario E (Air Quality Intelligence), and Scenario G (Community Signal Mesh).
         """
         ref_time = reference_time_utc or datetime.datetime.utcnow()
         self.expire_stale_insights(ref_time)
@@ -212,6 +223,17 @@ class CorrelationEngine:
             self.db.query(AirQualityObservation)
             .filter(AirQualityObservation.observed_at >= min_aqi_time)
             .order_by(desc(AirQualityObservation.observed_at))
+            .all()
+        )
+
+        min_community_time = ref_time - datetime.timedelta(hours=12)
+        active_community_signals = (
+            self.db.query(CommunitySignal)
+            .filter(
+                CommunitySignal.status != "RESOLVED",
+                CommunitySignal.created_at >= min_community_time,
+            )
+            .order_by(desc(CommunitySignal.upvotes), desc(CommunitySignal.created_at))
             .all()
         )
 
@@ -412,4 +434,122 @@ class CorrelationEngine:
                         created_insights.append(persisted)
                         correlated_aqi_ids.add(aqi.id)
 
+        # ====================================================================
+        # Stage 5: Scenario D — Event + Weather + Traffic + Parking Correlation (PPT Slide 03)
+        # ====================================================================
+        if run_scenario_d:
+            upcoming_events = (
+                self.db.query(Event)
+                .filter(
+                    Event.start_time <= ref_time + datetime.timedelta(hours=10),
+                    Event.start_time >= ref_time - datetime.timedelta(hours=2),
+                )
+                .all()
+            )
+            for ev in upcoming_events:
+                # Find nearest weather observation (< 35 km)
+                nearest_w = None
+                min_w_dist = float("inf")
+                for w in recent_weather:
+                    wd = haversine_distance_km(ev.latitude, ev.longitude, w.latitude, w.longitude)
+                    if wd < min_w_dist:
+                        min_w_dist = wd
+                        nearest_w = w
+                if min_w_dist > 35.0:
+                    nearest_w = None
+
+                # Find nearest traffic observation (< 15 km)
+                nearest_t = None
+                min_t_dist = float("inf")
+                for t in recent_traffic:
+                    td = haversine_distance_km(ev.latitude, ev.longitude, t.latitude, t.longitude)
+                    if td < min_t_dist:
+                        min_t_dist = td
+                        nearest_t = t
+                if min_t_dist > 15.0:
+                    nearest_t = None
+
+                res = evaluate_scenario_f_event_correlation(
+                    event=ev,
+                    weather=nearest_w,
+                    traffic=nearest_t,
+                    area_label=f"{ev.venue_name}, {ev.locality or ev.city}",
+                    area_lat=ev.latitude,
+                    area_lon=ev.longitude,
+                    reference_time_utc=ref_time,
+                )
+
+                if res.matched and res.insight:
+                    dedup_hash = self.generate_dedup_hash(
+                        "event_weather_traffic_correlation",
+                        f"{ev.venue_name}:{ev.id}",
+                        ev.id,
+                        (nearest_w.id if nearest_w else 0),
+                        ref_time.date(),
+                    )
+
+                    existing = (
+                        self.db.query(IntelligenceInsight)
+                        .filter(IntelligenceInsight.dedup_hash == dedup_hash)
+                        .first()
+                    )
+                    if existing:
+                        continue
+
+                    persisted = self._persist_insight(res.insight, dedup_hash, ref_time)
+                    created_insights.append(persisted)
+
+        # ====================================================================
+        # Stage 6: Scenario G — Community Ground-Truth Signal Mesh Correlation (PPT Slide 09)
+        # ====================================================================
+        if run_scenario_g and active_community_signals:
+            for sig in active_community_signals:
+                nearest_w = None
+                min_w_dist = float("inf")
+                for w in recent_weather:
+                    wd = haversine_distance_km(sig.latitude, sig.longitude, w.latitude, w.longitude)
+                    if wd < min_w_dist:
+                        min_w_dist = wd
+                        nearest_w = w
+                if min_w_dist > 25.0:
+                    nearest_w = None
+
+                nearest_t = None
+                min_t_dist = float("inf")
+                for t in recent_traffic:
+                    td = haversine_distance_km(sig.latitude, sig.longitude, t.latitude, t.longitude)
+                    if td < min_t_dist:
+                        min_t_dist = td
+                        nearest_t = t
+                if min_t_dist > 15.0:
+                    nearest_t = None
+
+                res = evaluate_scenario_g_community_signal_correlation(
+                    signal=sig,
+                    weather=nearest_w,
+                    traffic=nearest_t,
+                    reference_time_utc=ref_time,
+                )
+
+                if res.matched and res.insight:
+                    dedup_hash = self.generate_dedup_hash(
+                        "community_ground_truth_correlation",
+                        f"{sig.locality}:{sig.id}",
+                        sig.id,
+                        (nearest_t.id if nearest_t else (nearest_w.id if nearest_w else 0)),
+                        ref_time.date(),
+                    )
+
+                    existing = (
+                        self.db.query(IntelligenceInsight)
+                        .filter(IntelligenceInsight.dedup_hash == dedup_hash)
+                        .first()
+                    )
+                    if existing:
+                        continue
+
+                    persisted = self._persist_insight(res.insight, dedup_hash, ref_time)
+                    created_insights.append(persisted)
+
         return created_insights
+
