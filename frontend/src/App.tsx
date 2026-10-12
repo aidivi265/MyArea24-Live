@@ -106,6 +106,16 @@ export default function App() {
           <Route path="/admin" element={<ProtectedRoute><Suspense fallback={<PageSkeleton />}><AdminPage /></Suspense></ProtectedRoute>} />
           <Route path="/offline" element={<Suspense fallback={<PageSkeleton />}><OfflinePage /></Suspense>} />
 
+          {/* Aliases for direct URLs */}
+          <Route path="/weather" element={<Navigate to="/intelligence/weather" replace />} />
+          <Route path="/air-quality" element={<Navigate to="/intelligence/air-quality" replace />} />
+          <Route path="/traffic" element={<Navigate to="/intelligence/traffic" replace />} />
+          <Route path="/alerts" element={<Navigate to="/intelligence/alerts" replace />} />
+          <Route path="/assistant" element={<Navigate to="/intelligence/assistant" replace />} />
+          <Route path="/routes" element={<Navigate to="/intelligence/routes" replace />} />
+          <Route path="/demand" element={<Navigate to="/intelligence/demand" replace />} />
+          <Route path="/community" element={<Navigate to="/intelligence/community" replace />} />
+
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

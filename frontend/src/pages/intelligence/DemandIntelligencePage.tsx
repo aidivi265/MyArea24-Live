@@ -26,7 +26,7 @@ export default function DemandIntelligencePage() {
   const [stakeholderView, setStakeholderView] = useState<'ALL' | 'MERCHANT' | 'DELIVERY' | 'CONSUMER'>('ALL')
 
   const { data, isLoading } = useQuery({
-    queryKey: ['demand-intelligence', selectedArea],
+    queryKey: ['demand-intelligence', selectedArea, selectedLat, selectedLon],
     queryFn: () =>
       intelligenceApi.demand({
         area: selectedArea,

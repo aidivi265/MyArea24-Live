@@ -16,7 +16,7 @@ import {
   Radio,
   Flame,
 } from 'lucide-react'
-import { emergencyApi } from '@/services/apiService'
+import { emergencyApi, locationApi } from '@/services/apiService'
 import { useLocationStore } from '@/store'
 import { CardSkeleton } from '@/components/shared/Skeleton'
 import { EmptyState } from '@/components/shared/States'
@@ -58,14 +58,33 @@ export default function EmergencyPage() {
     staleTime: 30 * 60 * 1000,
   })
 
-  function locateMe() {
+  async function locateMe() {
     setGpsLoading(true)
     navigator.geolocation.getCurrentPosition(
-      pos => {
-        setGpsCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude })
+      async pos => {
+        const lat = pos.coords.latitude
+        const lon = pos.coords.longitude
+        setGpsCoords({ lat, lon })
         localStorage.setItem('ma24_location_manually_set', 'true')
-        setLocation('My Location (GPS)', pos.coords.latitude, pos.coords.longitude)
-        setGpsLoading(false)
+        try {
+          const detected = await locationApi.detect(lat, lon)
+          const areaName = detected.short_label || detected.display_label || `${lat.toFixed(4)}, ${lon.toFixed(4)}`
+          const cityName = detected.town || detected.district || areaName.split(',')[0].trim()
+          setLocation(areaName, lat, lon, {
+            city: cityName,
+            state: detected.state,
+            district: detected.district,
+            village: detected.village,
+            tehsil: detected.tehsil,
+            pincode: detected.pincode,
+            accuracy: detected.accuracy || 'exact',
+            rawAddress: detected.display_label || areaName,
+          })
+        } catch {
+          setLocation('My Location (GPS)', lat, lon)
+        } finally {
+          setGpsLoading(false)
+        }
       },
       () => setGpsLoading(false),
       { enableHighAccuracy: true, timeout: 8000 }

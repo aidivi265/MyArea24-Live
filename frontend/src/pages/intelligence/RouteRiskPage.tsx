@@ -253,7 +253,7 @@ export default function RouteRiskPage() {
                 )}
                 {(data.active_community_reports_count ?? 0) > 0 && (
                   <Link
-                    to="/community"
+                    to="/intelligence/community"
                     className="inline-flex items-center gap-1.5 bg-amber-400/25 hover:bg-amber-400/35 border border-amber-300/40 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-semibold text-amber-100 transition"
                   >
                     <AlertTriangle className="h-3.5 w-3.5 text-amber-300" />

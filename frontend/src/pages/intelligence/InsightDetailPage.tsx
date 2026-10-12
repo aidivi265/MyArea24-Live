@@ -100,6 +100,30 @@ export default function InsightDetailPage() {
             {/* Headline */}
             <h1 className="text-xl font-bold text-gray-800 leading-snug">{data.headline}</h1>
 
+            {/* Visual Signal Pipeline Chain (Slide 02-03) */}
+            <div className="rounded-xl bg-slate-50 border border-slate-200/80 p-3 text-xs space-y-1.5">
+              <span className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
+                Intelligence Pipeline (Data ➔ Context ➔ Intelligence ➔ Action):
+              </span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="px-2.5 py-1 rounded-lg bg-blue-100 text-blue-800 font-semibold text-xs flex items-center gap-1">
+                  📊 Raw Signals ({data.signals?.length || 1})
+                </span>
+                <span className="text-slate-400 font-bold">➔</span>
+                <span className="px-2.5 py-1 rounded-lg bg-purple-100 text-purple-800 font-semibold text-xs flex items-center gap-1">
+                  🔄 Hyperlocal Context
+                </span>
+                <span className="text-slate-400 font-bold">➔</span>
+                <span className="px-2.5 py-1 rounded-lg bg-amber-100 text-amber-800 font-semibold text-xs flex items-center gap-1">
+                  ⚠️ {data.composite_severity.toUpperCase()} Impact
+                </span>
+                <span className="text-slate-400 font-bold">➔</span>
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 font-semibold text-xs flex items-center gap-1">
+                  ✅ Actionable Advice
+                </span>
+              </div>
+            </div>
+
             {/* Area chip */}
             {data.area && (
               <div className="flex items-center gap-1.5 text-sm text-gray-500">

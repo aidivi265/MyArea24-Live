@@ -131,8 +131,8 @@ export default function MapPage() {
   const [isSimulatingDrive, setIsSimulatingDrive] = useState(false)
   const [stepsDrawerOpen, setStepsDrawerOpen] = useState(false)
 
-  const lat = selectedLat ?? 28.5672
-  const lon = selectedLon ?? 77.2100
+  const lat = selectedLat ?? 28.6304
+  const lon = selectedLon ?? 77.2177
 
   // Update originCoords on lat/lon changes
   useEffect(() => {
