@@ -22,6 +22,7 @@ import { CardSkeleton } from '@/components/shared/Skeleton'
 import { SEOMeta } from '@/components/shared/SEOMeta'
 import { CRITICALITY_STYLES, cn, formatRelativeTime } from '@/utils'
 import type { LocationResult, TrafficIncident } from '@/types'
+import { useTranslation } from 'react-i18next'
 
 const POPULAR_CORRIDORS = [
   { name: 'Ghaziabad (AKGEC)', lat: 28.6757, lon: 77.5020 },
@@ -39,6 +40,7 @@ type FilterType = 'ALL' | 'CONGESTION' | 'ROAD_CLOSURE' | 'ACCIDENT' | 'ROAD_WOR
 type SortType = 'PROXIMITY' | 'DELAY' | 'SEVERITY'
 
 export default function TrafficPage() {
+  const { t } = useTranslation()
   const { selectedArea, selectedLat, selectedLon, setLocation } = useLocationStore()
 
   // Target location for traffic (defaults to global selected location)
@@ -193,7 +195,7 @@ export default function TrafficPage() {
             <div>
               <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
                 <Car className="h-6 w-6 text-orange-500" />
-                Live Traffic & Corridor Conditions
+                {t('traffic.title', { defaultValue: 'Live Traffic & Corridor Conditions' })}
               </h1>
               <p className="text-xs text-gray-400 mt-0.5">
                 TomTom Traffic API v5 · Real-time Incidents & Delays (Within 30 km)
